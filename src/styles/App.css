@@ -1,0 +1,73 @@
+#root {
+  position: relative;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.actions-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.world {
+  position: relative;
+}
+
+.grid {
+  display: grid;
+  gap: 4px;
+}
+
+.grid.field .cell {
+  background: #333;
+  border-radius: 2px;
+  display: grid;
+  align-content: center;
+  color: #555;
+}
+
+.grid.orbs {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.grid.orbs .cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.orb {
+  width: 36px;
+  height: 36px;
+  border-radius: 100%;
+  background: #8f8c81;
+  display: grid;
+  align-content: center;
+  text-align: center;
+}
+.orb:hover {
+  box-shadow: 0 0 24px #f0b800;
+  cursor: pointer;
+}
+
+.orb-story {
+  position: fixed;
+  top: 15px;
+  left: 15px;
+  background: #1a1a1a;
+  padding: 12px 24px;
+  border-radius: 16px;
+  overflow-y: scroll;
+  height: calc(100% - 60px);
+}
+
+/*.logo.react:hover {*/
+/*  filter: drop-shadow(0 0 2em #61dafbaa);*/
+/*}*/
+
