@@ -38,7 +38,6 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 - отбор
 
 + сохранять лог каждого раунда? чтобы посмотреть что там происходило и поисследовать орбов
-+ сохранять тех кто дал потомство с каждого раунда для последующего исследования
 + конструктор орба
 
  */
@@ -47,18 +46,20 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const worldSize: number[] = [ 15, 25 ]
 
-const initialOrbsCount = 30 // должно быть четным
-const initialOrbHP = [8, 16]
+const initialOrbHP = [ 8, 16 ]
+const initialOrbsCount = 30
+const newGenStrongestCount = 10
+const newGenOffspringPerParent = 3
 
-const initialEnergyOnMap = 100
+const initialEnergyOnMap = 300
 const resetEnergyOnNewGenerations = false // true - сбрасывать энергию на новую генерацию, false - сохранять
 
-const splitHP = 6
+const splitHPThreshold = 6 // ??
+const hpGainByEnergyConsumption = 3
+
 const dnaLength = 36
-// Number of signal categories used by reactions (columns)
-const reactionsLength = 5
-// Number of directions that a signal can come from (rows)
-const reactionDirectionsLength = 4
+const reactionsLength = 5 // Number of signal categories used by reactions (columns)
+const reactionDirectionsLength = 4 // Number of directions that a signal can come from (rows)
 
 const idLength = 6
 const initialTurnDuration = 100
@@ -148,7 +149,7 @@ const orbCommandsInfo: Record<number, { icon: string; label: string }> = {
     label: 'Bite Down'
   },
   [orbCommands.CONSUME_ENERGY]: {
-    icon: '🍽️',
+    icon: '⚡️',
     label: 'Consume Energy'
   },
   [orbCommands.GIVE_BIRTH_LEFT]: {
@@ -166,7 +167,7 @@ const orbCommandsInfo: Record<number, { icon: string; label: string }> = {
   [orbCommands.GIVE_BIRTH_DOWN]: {
     icon: '👶⬇️',
     label: 'Give Birth Down'
-  },
+  }
 }
 
 // Direction indices for reaction matrix rows
@@ -179,6 +180,7 @@ const reactionDirections = {
 
 class Orb {
   id: string
+  name: string
   age: number = 0
 
   x: number
@@ -189,22 +191,23 @@ class Orb {
   dnaPointer: number = 0
   reactions: number[][]
 
-  log: string[] = []
+  log: string[][] = []
   deathReason: DeathReason | null = null
   preventAgingThisTurn: boolean = false
   glow: string = ''
 
-  constructor(x: number, y: number, hp: number, dna: number[], reactions: number[][]) {
+  constructor(x: number, y: number, hp: number, dna: number[], reactions: number[][], parentName?: string) {
     this.x = x
     this.y = y
     this.hp = hp
     this.dna = dna
     this.reactions = reactions
     this.id = getRandomId(idLength)
-    this.addToLog(`I was born with ${hp} hp`)
+    this.name = dnaToName(dna) + (parentName ? ` child of ${parentName}` : '')
+    this.addToLog(`I was born with ❤️${hp}hp`)
   }
 
-  triggerGlow (className: 'glow-white' | 'glow-red' | 'glow-green') {
+  triggerGlow(className: 'glow-white' | 'glow-red' | 'glow-green') {
     this.glow = className
     // request immediate re-render so UI reflects glow state even when paused
     forceRerender?.()
@@ -217,13 +220,16 @@ class Orb {
     }, 1000)
   }
 
-  act () {
+  act() {
     if (this.hp <= 0) {
       return
     }
 
     // Reset aging prevention flag for this turn
     this.preventAgingThisTurn = false
+
+    // Start a new log block for this turn
+    this.log.push([])
 
     this.executeCommand(this.dna[this.dnaPointer])
     // Apply unified aging once per act if not prevented by action
@@ -235,85 +241,63 @@ class Orb {
     this.age += 1
   }
 
-  executeCommand (id: number) {
-    orbCommandsStats[id]++
-
+  executeCommand(id: number) {
+    this.addToLog(`I decided to ${orbCommandsInfo[id]?.icon ?? 'do ???'}`)
     switch (id) {
       case orbCommands.MOVE_RIGHT:
-        this.addToLog(`I decided to move right`)
         this.move(this.x + 1, this.y)
-        this.addToLog(`> I went right`)
         break
       case orbCommands.MOVE_LEFT:
-        this.addToLog(`I decided to move left >`)
         this.move(this.x - 1, this.y)
-        this.addToLog(`> I went left`)
         break
       case orbCommands.MOVE_UP:
-        this.addToLog(`I decided to move up >`)
         this.move(this.x, this.y + 1)
-        this.addToLog(`> I went up`)
         break
       case orbCommands.MOVE_DOWN:
-        this.addToLog(`I decided to move down >`)
         this.move(this.x, this.y - 1)
-        this.addToLog(`> I went down`)
         break
       case orbCommands.CONSUME_ENERGY: {
-        this.addToLog(`I try to consume energy >`)
         this.consumeEnergy()
         break
       }
       case orbCommands.BITE_LEFT: {
-        this.addToLog(`I bite left >`)
         this.bite(this.x - 1, this.y)
       }
         break
       case orbCommands.BITE_RIGHT: {
-        this.addToLog(`I bite right >`)
         this.bite(this.x + 1, this.y)
       }
         break
       case orbCommands.BITE_UP: {
-        this.addToLog(`I bite up >`)
         this.bite(this.x, this.y + 1)
       }
         break
       case orbCommands.BITE_DOWN: {
-        this.addToLog(`I bite down >`)
         this.bite(this.x, this.y - 1)
         break
       }
       case orbCommands.WATCH_RIGHT:
-        this.addToLog(`I watch right >`)
         this.watch(this.x + 1, this.y)
         break
       case orbCommands.WATCH_LEFT:
-        this.addToLog(`I watch left >`)
-        this.watch(this.x -1, this.y)
+        this.watch(this.x - 1, this.y)
         break
       case orbCommands.WATCH_TOP:
-        this.addToLog(`I watch top >`)
         this.watch(this.x, this.y + 1)
         break
       case orbCommands.WATCH_BOTTOM:
-        this.addToLog(`I watch bottom >`)
         this.watch(this.x, this.y - 1)
         break
       case orbCommands.GIVE_BIRTH_LEFT:
-        this.addToLog(`I try to give birth left >`)
         this.giveBirth(this.x - 1, this.y)
         break
       case orbCommands.GIVE_BIRTH_RIGHT:
-        this.addToLog(`I try to give birth right >`)
         this.giveBirth(this.x + 1, this.y)
         break
       case orbCommands.GIVE_BIRTH_UP:
-        this.addToLog(`I try to give birth up >`)
         this.giveBirth(this.x, this.y + 1)
         break
       case orbCommands.GIVE_BIRTH_DOWN:
-        this.addToLog(`I try to give birth down >`)
         this.giveBirth(this.x, this.y - 1)
         break
     }
@@ -321,9 +305,9 @@ class Orb {
 
   // -- commands --
 
-  move (x:number, y:number) {
+  move(x: number, y: number) {
     if (!withinWorldBoundaries(x, y)) {
-      this.addToLog(`> I jump out of the world`)
+      this.addToLog(`I jump out of the world`)
       this.deathReason = deathReasons.OUT_OF_WORLD
       this.loseHp(this.hp)
       return
@@ -331,40 +315,33 @@ class Orb {
 
     const occupants = getCellOrbs(x, y)
     if (occupants.length > 0) {
-      this.addToLog(`> I tried to step into occupied cell, but failed`)
+      this.addToLog(`It is occupied`)
       return
     }
 
     this.x = x
     this.y = y
+
+    this.addToLog(`It worked`)
   }
 
-  bite (x:number, y:number) {
+  bite(x: number, y: number) {
     this.triggerGlow('glow-red')
 
     let cellOrbs = getCellOrbs(x, y, this.id)
     if (cellOrbs.length === 0) {
-      this.addToLog(`> I missed my bite`)
+      this.addToLog(`No one is there`)
       return
     }
 
-    // Prefer only smaller prey; otherwise fail
-    const smallerPrey = cellOrbs.filter(o => o.hp < this.hp)
-    if (smallerPrey.length === 0) {
-      this.addToLog(`> No smaller prey to eat`)
-      return
-    }
-
-    const prey = smallerPrey[getRandomMinMax(0, smallerPrey.length - 1)]
-    this.eat(prey)
+    this.eat(cellOrbs[0])
   }
 
-  eat (prey: Orb) {
+  eat(prey: Orb) {
     if (prey instanceof Orb) {
       const canEat = prey.hp < this.hp / 2
-
       if (!canEat) {
-        this.addToLog(`> I failed to eat ${prey.id} (prey not smaller)`)
+        this.addToLog(`I failed to eat ${prey.id} (prey not smaller)`)
         return
       }
 
@@ -372,7 +349,7 @@ class Orb {
       const hpGain = prey.hp
       this.hp += hpGain
       registerHpGainedFromEating(hpGain)
-      this.addToLog(`> I ate Orb ${prey.id} and got ${hpGain}hp`)
+      this.addToLog(`I ate Orb ${prey.id} and got ${hpGain}hp`)
 
       // Eating prevents aging for this turn
       this.preventAgingThisTurn = true
@@ -380,54 +357,61 @@ class Orb {
       prey.addToLog(`I was eaten by ${this.id}`)
       prey.deathReason = deathReasons.EATEN
       prey.loseHp(prey.hp)
-      orbsEaten += 1
     }
   }
 
-  watch (x:number, y:number) {
+  watch(x: number, y: number) {
     // Determine direction of the watched cell relative to current orb
     const dx = x - this.x
     const dy = y - this.y
     let dirIndex: number | null = null
-    if (dx === -1 && dy === 0) dirIndex = reactionDirections.LEFT
-    if (dx === 1 && dy === 0) dirIndex = reactionDirections.RIGHT
-    if (dx === 0 && dy === 1) dirIndex = reactionDirections.TOP
-    if (dx === 0 && dy === -1) dirIndex = reactionDirections.BOTTOM
+    if (dx === -1 && dy === 0) {
+      dirIndex = reactionDirections.LEFT
+    }
+    if (dx === 1 && dy === 0) {
+      dirIndex = reactionDirections.RIGHT
+    }
+    if (dx === 0 && dy === 1) {
+      dirIndex = reactionDirections.TOP
+    }
+    if (dx === 0 && dy === -1) {
+      dirIndex = reactionDirections.BOTTOM
+    }
 
     let signalIndex
 
     if (!withinWorldBoundaries(x, y)) {
-      this.addToLog('> I looked out of the world >')
+      this.addToLog('I looked out of the world')
       signalIndex = 0
     } else {
       const cellOrbs = getCellOrbs(x, y)
       if (cellOrbs.length === 0) {
         if (getCellEnergy(y, x) > 0) {
-          this.addToLog('> I saw energy >')
+          this.addToLog('I saw energy')
           signalIndex = 1
         } else {
-          this.addToLog('> I saw nothing >')
+          this.addToLog('I saw nothing')
           signalIndex = 2
         }
       } else {
-        this.addToLog('> I saw an orb >')
+        this.addToLog('I saw an orb')
         if (cellOrbs.some(o => o.hp < this.hp)) {
-          this.addToLog('> smaller than me >')
+          this.addToLog('smaller than me')
           signalIndex = 3
         } else {
-          this.addToLog('> bigger than me >')
+          this.addToLog('bigger than me')
           signalIndex = 4
         }
       }
     }
 
-    this.addToLog('> and performed a follow-up action:')
+    this.addToLog('and performed a reaction:')
 
     // If direction cannot be determined (shouldn't happen in normal usage), fallback to appropriate watch row
     const safeDirIndex = dirIndex ?? reactionDirections.LEFT
     const reactionCommandId = this.reactions[safeDirIndex]?.[signalIndex]
     if (reactionCommandId === undefined) {
-      this.addToLog('> no reaction configured >')
+      this.addToLog('no reaction configured')
       return
     }
     // Guard against recursive watch → watch chains
@@ -437,67 +421,66 @@ class Orb {
       reactionCommandId === orbCommands.WATCH_TOP ||
       reactionCommandId === orbCommands.WATCH_BOTTOM
     ) {
-      this.addToLog('> ignored recursive watch reaction >')
+      this.addToLog('ignored recursive watch reaction')
       return
     }
     this.executeCommand(reactionCommandId)
   }
 
-  giveBirth (x:number, y:number) {
+  giveBirth(x: number, y: number) {
     if (!withinWorldBoundaries(x, y)) {
-      this.addToLog(`> I tried to give birth out of the world`)
+      this.addToLog(`I tried to give birth out of the world`)
       return
     }
 
     const occupants = getCellOrbs(x, y)
     if (occupants.length > 0) {
-      this.addToLog(`> I tried to give birth into occupied cell`)
+      this.addToLog(`I tried to give birth into occupied cell`)
       return
     }
 
-    if (this.hp >= splitHP) {
+    if (this.hp >= splitHPThreshold) {
       this.triggerGlow('glow-green')
-
-      const child = spawnOrb(x, y, Math.ceil(this.hp / 2), this.dna, this.reactions)
+      const child = spawnOrb(x, y, Math.ceil(this.hp / 2), this.dna, this.reactions, this.name)
       this.loseHp(Math.floor(this.hp / 2))
-      this.addToLog(`> It spawned ${child.id}`)
+      this.addToLog(`It spawned ${child.name}`)
       registerBirth()
     } else {
-      this.addToLog(`> I did not have enough hp`)
+      this.addToLog(`I did not have enough hp`)
     }
   }
 
-  consumeEnergy () {
+  consumeEnergy() {
     const energyHere = getCellEnergy(this.y, this.x)
     if (energyHere > 0) {
       consumeCellEnergy(this.y, this.x, 1)
       registerEnergyConsumed(1)
-      this.addToLog(`> I consumed energy`)
-      this.gainHp(1)
+      this.addToLog(`It worked`)
+      this.gainHp(hpGainByEnergyConsumption)
       this.preventAgingThisTurn = true
       this.triggerGlow('glow-white')
     } else {
-      this.addToLog(`> No energy here (${energyHere})`)
+      this.addToLog(`No energy here`)
     }
   }
 
   // -- helpers --
 
-  moveDnaPointer (value:number) {
+  moveDnaPointer(value: number) {
     this.dnaPointer += value
     if (this.dnaPointer >= this.dna.length) {
       this.dnaPointer = 0
     }
   }
 
-  gainHp (amount: number) {
+  gainHp(amount: number) {
     this.hp += amount
-    this.addToLog(`> (${this.hp})`)
+    this.addToLog(`❤️${this.hp}`)
   }
 
-  loseHp (amount: number) {
+  loseHp(amount: number) {
     this.hp -= amount
-    this.addToLog(`> (${this.hp})`)
+    this.addToLog(`❤️${this.hp}`)
     if (this.hp <= 0) {
       if (withinWorldBoundaries(this.x, this.y)) {
         this.layDownEnergy(1)
@@ -509,42 +492,33 @@ class Orb {
     }
   }
 
-  layDownEnergy (value: number) {
+  layDownEnergy(value: number) {
     if (value <= 0) {
       return
     }
     addCellEnergy(this.y, this.x, value)
   }
 
-  die () {
-    this.addToLog(`I died at age of ${this.age}`)
+  die() {
+    this.addToLog(`☠️ I died at age of ${this.age}`)
     registerDeath(this.deathReason ?? deathReasons.NO_HP, this.age)
     lastTurnDeadOrbs.push(this)
 
     removeWorldObject(this)
   }
 
-  addToLog (entry: string) {
-    if (
-      this.log[this.log.length - 1] &&
-      this.log[this.log.length - 1].slice(-1) === '>'
-    ) {
-      this.log[this.log.length - 1] += ` ${entry}`
-      return
+  addToLog(entry: string) {
+    // Ensure there is a current turn block to append to
+    if (!this.log[this.log.length - 1]) {
+      this.log.push([])
     }
-
-    if (
-      this.log[this.log.length - 1] &&
-      entry.slice(0, 1) === '>'
-    ) {
-      this.log[this.log.length - 1] += ` ${entry}`
-      return
+    const cleaned = entry.replace(/>/g, '').trim()
+    if (cleaned.length > 0) {
+      this.log[this.log.length - 1].push(cleaned)
     }
-
-    this.log.push(entry)
   }
 
-  getColor () {
+  getColor() {
     const greens = this.dna.reduce((sum, item) => {
       return item === orbCommands.CONSUME_ENERGY
         ? sum + item
@@ -557,7 +531,7 @@ class Orb {
         orbCommands.BITE_RIGHT,
         orbCommands.BITE_UP,
         orbCommands.BITE_DOWN
-    ].includes(item)
+      ].includes(item)
         ? sum + item
         : sum
     }, 0)
@@ -577,7 +551,7 @@ let worldEnergy: number[][] = []
 let orbs: Orb[] = []
 let lastTurnDeadOrbs: Orb[] = []
 
-function generateWorld (worldIteration:number = 0) {
+function generateWorld(worldIteration: number = 0) {
   if (deathStatsPerGeneration.length === 0) {
     startNewGeneration()
   }
@@ -586,18 +560,30 @@ function generateWorld (worldIteration:number = 0) {
 
   if (worldIteration > 1) {
     // последующие геренации
-    const strongestOrbs = lastTurnDeadOrbs
-      .sort((a, b) => b.age - a.age)
-      .slice(0, initialOrbsCount / 2)
+    // Build strongest list from last generation's dead orbs, ensuring unique IDs
+    const sorted = [...lastTurnDeadOrbs].sort((a, b) => b.age - a.age)
+    const strongestOrbs: Orb[] = []
+    const seen = new Set<string>()
+    for (const orb of sorted) {
+      if (seen.has(orb.id)) {
+        continue
+      }
+      seen.add(orb.id)
+      strongestOrbs.push(orb)
+      if (strongestOrbs.length >= newGenStrongestCount) {
+        break
+      }
+    }
 
     orbs = []
     lastTurnDeadOrbs = []
 
     // каждый орб дает двух потомков
     for (const strongestOrb of strongestOrbs) {
-      for (let i = 0; i < initialOrbsCount / strongestOrbs.length; i++) {
-        const [x, y] = getRandomEmptyCell()
+      for (let i = 0; i < newGenOffspringPerParent; i++) {
+        const [ x, y ] = getRandomEmptyCell()
         const hp = getRandomMinMax(initialOrbHP[0], initialOrbHP[1])
+        // First orbs of a new generation should have only one name (DNA-based)
         spawnOrb(x, y, hp, strongestOrb.dna, strongestOrb.reactions)
       }
     }
@@ -620,7 +606,7 @@ function generateWorld (worldIteration:number = 0) {
     // первая генерация
     orbs = []
     for (let i = 0; i < initialOrbsCount; i++) {
-      const [x, y] = getRandomEmptyCell()
+      const [ x, y ] = getRandomEmptyCell()
       const hp = getRandomMinMax(initialOrbHP[0], initialOrbHP[1])
       spawnOrb(x, y, hp)
     }
@@ -635,7 +621,7 @@ function generateWorld (worldIteration:number = 0) {
   }
 }
 
-function reseedRandomEnergy () {
+function reseedRandomEnergy() {
   worldEnergy = []
   for (let rowIndex = 0; rowIndex < worldSize[0]; rowIndex++) {
     worldEnergy.push(Array(worldSize[1]).fill(0))
@@ -643,15 +629,17 @@ function reseedRandomEnergy () {
   distributeEnergyOnMap(initialEnergyOnMap)
 }
 
-function generateMap () {
+function generateMap() {
   world = []
   for (let rowIndex = 0; rowIndex < worldSize[0]; rowIndex++) {
     world.push(Array(worldSize[1]).fill(0))
   }
 }
 
-function distributeEnergyOnMap (total: number) {
-  if (!total || total <= 0) return
+function distributeEnergyOnMap(total: number) {
+  if (!total || total <= 0) {
+    return
+  }
   for (let i = 0; i < total; i++) {
     const rowIndex = getRandomMinMax(0, worldSize[0] - 1)
     const colIndex = getRandomMinMax(0, worldSize[1] - 1)
@@ -659,7 +647,14 @@ function distributeEnergyOnMap (total: number) {
   }
 }
 
-function spawnOrb (x:number, y:number, hp:number, ancestorDNA: number[] = [], ancestorReactions: number[][] = []): Orb {
+function spawnOrb(
+  x: number,
+  y: number,
+  hp: number,
+  ancestorDNA: number[] = [],
+  ancestorReactions: number[][] = [],
+  parentName?: string
+): Orb {
   const dna = ancestorDNA.length
     ? getMutatedDNA(ancestorDNA)
     : getRandomDNA()
@@ -668,13 +663,13 @@ function spawnOrb (x:number, y:number, hp:number, ancestorDNA: number[] = [], an
     ? getMutatedReactions(ancestorReactions)
     : getRandomReactions()
 
-  const orb = new Orb(x, y, hp, dna, reactions)
+  const orb = new Orb(x, y, hp, dna, reactions, parentName)
   orbs.push(orb)
 
   return orb
 }
 
-function makeTurn (_turnNum: number) {
+function makeTurn(_turnNum: number) {
   for (const orb of orbs) {
     if (orb.hp > 0) {
       orb.act()
@@ -686,7 +681,7 @@ function makeTurn (_turnNum: number) {
 
 // ----- HELPERS -----
 
-function withinWorldBoundaries (x: number, y: number) {
+function withinWorldBoundaries(x: number, y: number) {
   // x is column index (horizontal), y is row index (vertical)
   return x >= 0 &&
     x < worldSize[1] &&
@@ -695,14 +690,14 @@ function withinWorldBoundaries (x: number, y: number) {
 }
 
 // Energy helpers
-function getCellEnergy (rowIndex: number, colIndex: number): number {
+function getCellEnergy(rowIndex: number, colIndex: number): number {
   if (!withinWorldBoundaries(colIndex, rowIndex)) {
     return 0
   }
   return worldEnergy[rowIndex]?.[colIndex] ?? 0
 }
 
-function addCellEnergy (rowIndex: number, colIndex: number, amount: number = 1): number {
+function addCellEnergy(rowIndex: number, colIndex: number, amount: number = 1): number {
   if (!withinWorldBoundaries(colIndex, rowIndex)) {
     return 0
   }
@@ -715,7 +710,7 @@ function addCellEnergy (rowIndex: number, colIndex: number, amount: number = 1):
   return next
 }
 
-function consumeCellEnergy (rowIndex: number, colIndex: number, amount: number = 1): boolean {
+function consumeCellEnergy(rowIndex: number, colIndex: number, amount: number = 1): boolean {
   if (!withinWorldBoundaries(colIndex, rowIndex)) {
     return false
   }
@@ -729,7 +724,7 @@ function consumeCellEnergy (rowIndex: number, colIndex: number, amount: number =
 }
 
 // Sum all energy present on the field
-function sumWorldEnergy (): number {
+function sumWorldEnergy(): number {
   if (!worldEnergy || worldEnergy.length === 0) {
     return 0
   }
@@ -743,33 +738,33 @@ function sumWorldEnergy (): number {
   return sum
 }
 
-function getRandomMinMax (min: number, max: number) {
+function getRandomMinMax(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 // Returns coordinates of a random empty cell to ensure single occupancy
-function getRandomEmptyCell (): [number, number] {
+function getRandomEmptyCell(): [ number, number ] {
   // Try up to 1000 random picks to find an empty cell
   for (let i = 0; i < 1000; i++) {
     const x = getRandomMinMax(0, worldSize[1] - 1) // column
     const y = getRandomMinMax(0, worldSize[0] - 1) // row
     if (getCellOrbs(x, y).length === 0) {
-      return [x, y]
+      return [ x, y ]
     }
   }
   // Fallback: return any random cell (unlikely to be needed)
-  return [getRandomMinMax(0, worldSize[1] - 1), getRandomMinMax(0, worldSize[0] - 1)]
+  return [ getRandomMinMax(0, worldSize[1] - 1), getRandomMinMax(0, worldSize[0] - 1) ]
 }
 
-function getCellOrbs (x:number, y:number, excludeId:string|null= null) {
-  let o =  orbs.filter(orb => orb.x === x && orb.y === y)
+function getCellOrbs(x: number, y: number, excludeId: string | null = null) {
+  let o = orbs.filter(orb => orb.x === x && orb.y === y)
   if (excludeId) {
     o = o.filter(item => item.id !== excludeId)
   }
   return o
 }
 
-function removeWorldObject (obj: Orb) {
+function removeWorldObject(obj: Orb) {
   if (obj instanceof Orb) {
     for (let i = 0; i < orbs.length; i++) {
       if (orbs[i].id === obj.id) {
@@ -780,12 +775,24 @@ function removeWorldObject (obj: Orb) {
   }
 }
 
-function getRandomId (length:number) {
+function getRandomId(length: number) {
   let str = ''
-  for (let i = 0; i <length; i++) {
+  for (let i = 0; i < length; i++) {
     str += (Math.random() * 16 | 0).toString(16)
   }
   return str
+}
+
+// Generate a readable, deterministic name from DNA numbers
+function dnaToName(dna: number[], maxLen: number = 8): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+  const letters: string[] = []
+  for (let i = 0; i < dna.length && letters.length < maxLen; i++) {
+    const n = dna[i]
+    letters.push(alphabet[n % 26])
+  }
+  const base = letters.join('') || 'orb'
+  return base.charAt(0).toUpperCase() + base.slice(1)
 }
 
 function getRandomDNA() {
@@ -801,7 +808,7 @@ function getRandomDNA() {
   })
 }
 
-function getRandomOrbCommand () {
+function getRandomOrbCommand() {
   // Choose from existing command IDs to avoid selecting removed IDs
   const values = Object.values(orbCommands)
   const idx = getRandomMinMax(0, values.length - 1)
@@ -809,7 +816,7 @@ function getRandomOrbCommand () {
 }
 
 // Return a random command ID excluding any listed in `excludeIds`
-function getRandomOrbCommandExclude (excludeIds: number[] = []) {
+function getRandomOrbCommandExclude(excludeIds: number[] = []) {
   const values = Object.values(orbCommands)
   const allowed = values.filter(id => !excludeIds.includes(id))
   if (allowed.length === 0) {
@@ -820,16 +827,16 @@ function getRandomOrbCommandExclude (excludeIds: number[] = []) {
   return allowed[idx]
 }
 
-function getMutatedDNA (ancestorDNA: number[]) {
+function getMutatedDNA(ancestorDNA: number[]) {
   const newDNA = [ ...ancestorDNA ]
-  
+
   const randomIndex = getRandomMinMax(0, newDNA.length - 1)
   newDNA[randomIndex] = getRandomOrbCommand()
-  
+
   return newDNA
 }
 
-function getMutatedReactions (ancestorReactions: number[][]) {
+function getMutatedReactions(ancestorReactions: number[][]) {
   // Deep copy matrix
   const newReactions = ancestorReactions.map(row => [ ...row ])
 
@@ -861,14 +868,6 @@ function getRandomReactions() {
   ))
 }
 
-// ---- STATS -----
-
-let maxTurns = 0
-let orbsEaten = 0
-let orbCommandsStats = Object.fromEntries(
-  Object.values(orbCommands).map(key => ([key, 0]))
-)
-
 // Death reasons and per-generation stats
 const deathReasons = {
   EATEN: 'eaten',
@@ -892,8 +891,10 @@ let currentGeneration = 0
 let deathStatsPerGeneration: GenerationStats[] = []
 // Global re-render hook used by non-React objects (like Orb) to refresh UI
 let forceRerender: (() => void) | null = null
+// Strongest (oldest) orbs saved per generation for later viewing
+let strongestOrbsPerGeneration: Orb[][] = []
 
-function startNewGeneration () {
+function startNewGeneration() {
   currentGeneration += 1
   deathStatsPerGeneration[currentGeneration - 1] = {
     reasons: {
@@ -910,7 +911,7 @@ function startNewGeneration () {
   }
 }
 
-function registerDeath (reason: DeathReason, age: number) {
+function registerDeath(reason: DeathReason, age: number) {
   if (currentGeneration === 0) {
     // Ensure there is at least one generation bucket
     startNewGeneration()
@@ -923,18 +924,24 @@ function registerDeath (reason: DeathReason, age: number) {
 }
 
 // Additional per-generation counters
-function registerBirth () {
-  if (currentGeneration === 0) startNewGeneration()
+function registerBirth() {
+  if (currentGeneration === 0) {
+    startNewGeneration()
+  }
   deathStatsPerGeneration[currentGeneration - 1].births += 1
 }
 
-function registerEnergyConsumed (amount: number) {
-  if (currentGeneration === 0) startNewGeneration()
+function registerEnergyConsumed(amount: number) {
+  if (currentGeneration === 0) {
+    startNewGeneration()
+  }
   deathStatsPerGeneration[currentGeneration - 1].consumedEnergy += Math.max(0, amount)
 }
 
-function registerHpGainedFromEating (amount: number) {
-  if (currentGeneration === 0) startNewGeneration()
+function registerHpGainedFromEating(amount: number) {
+  if (currentGeneration === 0) {
+    startNewGeneration()
+  }
   deathStatsPerGeneration[currentGeneration - 1].hpGainedFromEating += Math.max(0, amount)
 }
 
@@ -943,27 +950,41 @@ function registerHpGainedFromEating (amount: number) {
 generateWorld()
 
 function App() {
-  const [turn, setTurn] = useState(0)
-  const [worldNum, setWorldNum] = useState(0)
-  const [turnDuration, setTurnDuration] = useState(initialTurnDuration)
-  const [selectedOrb, setSelectedOrb] = useState<Orb | null>(null)
-  const [paused, setPaused] = useState(false)
-  const [activeGenTab, setActiveGenTab] = useState(0)
+  const [ turn, setTurn ] = useState(0)
+  const [ worldNum, setWorldNum ] = useState(0)
+  const [ turnDuration, setTurnDuration ] = useState(initialTurnDuration)
+  const [ selectedOrb, setSelectedOrb ] = useState<Orb | null>(null)
+  const [ paused, setPaused ] = useState(false)
+  const [ activeGenTab, setActiveGenTab ] = useState(0)
 
   const aliveOrbsCount: number = orbs.filter(orb => orb.hp > 0).length
 
-  function triggerTurn () {
+  function triggerTurn() {
     setTurn(turn => turn + 1)
     makeTurn(turn)
   }
 
-  function trackWorldStats () {
-    if (turn > maxTurns) {
-      maxTurns = turn
-    }
+  function trackWorldStats() {
     if (deathStatsPerGeneration.length > 0 && currentGeneration > 0) {
       // Record turns count for the generation that just ended
       deathStatsPerGeneration[currentGeneration - 1].turns = turn
+
+      // Save strongest (oldest) orbs for the generation that just ended.
+      // Ensure uniqueness by ID to avoid duplicate React keys.
+      const sorted = [...lastTurnDeadOrbs].sort((a, b) => b.age - a.age)
+      const uniqueStrongest: Orb[] = []
+      const seen = new Set<string>()
+      for (const orb of sorted) {
+        if (seen.has(orb.id)) {
+          continue
+        }
+        seen.add(orb.id)
+        uniqueStrongest.push(orb)
+        if (uniqueStrongest.length >= newGenStrongestCount) {
+          break
+        }
+      }
+      strongestOrbsPerGeneration[currentGeneration - 1] = uniqueStrongest
     }
   }
 
@@ -983,7 +1004,6 @@ function App() {
         startNewGeneration()
         generateWorld(worldNum)
         setTurn(0)
-        console.log(`>> all dead on turn: ${turn}`)
       }
     }, turnDuration)
 
@@ -1006,74 +1026,84 @@ function App() {
     worldNum
   ])
 
-  function showOrbStory (orb: Orb) {
+  function showOrbStory(orb: Orb) {
     setSelectedOrb(orb)
   }
 
   return (
     <>
       <div className="actions-bar">
-        <span>
-          gen: {worldNum}
-        </span>
+        <div className='actions-bar-panel'>
+          <div>
+            gen: {worldNum}
+          </div>
 
-        <span>
-          turn: {turn}
-        </span>
+          <div>
+            turn: {turn}
+          </div>
+        </div>
 
-        <button
-          disabled={turn === 0}
-          onClick={() => {
-            setWorldNum(0)
-            setTurn(0)
-            generateWorld()
-          }}
-        >
-          ↪️Restart
-        </button>
-
-        <div>
+        <div className='actions-bar-panel'>
           <button
             disabled={turn === 0}
-            onClick={() => setTurnDuration(10)}
+            onClick={() => {
+              setWorldNum(0)
+              setTurn(0)
+              generateWorld()
+            }}
           >
-            10
+            ↪️Restart
           </button>
+
+          <div>
+            <button
+              disabled={turn === 0}
+              onClick={() => setTurnDuration(1)}
+            >
+              1
+            </button>
+            <button
+              disabled={turn === 0}
+              onClick={() => setTurnDuration(10)}
+            >
+              10
+            </button>
+            <button
+              disabled={turn === 0}
+              onClick={() => setTurnDuration(100)}
+            >
+              100
+            </button>
+            <button
+              disabled={turn === 0}
+              onClick={() => setTurnDuration(500)}
+            >
+              500
+            </button>
+            <button
+              onClick={() => setPaused(p => !p)}
+              title={paused ? 'Resume' : 'Pause'}
+            >
+              {paused ? '▶️ Resume' : '⏸️ Pause'}
+            </button>
+            <button
+              onClick={() => triggerTurn()}
+              disabled={!paused}
+              title="Step one turn"
+            >
+              ➡️
+            </button>
+          </div>
           <button
             disabled={turn === 0}
-            onClick={() => setTurnDuration(100)}
+            onClick={() => {
+              generateWorld()
+              setTurn(0)
+            }}
           >
-            100
-          </button>
-          <button
-            disabled={turn === 0}
-            onClick={() => setTurnDuration(500)}
-          >
-            500
-          </button>
-          <button
-            onClick={() => setPaused(p => !p)}
-            title={paused ? 'Resume' : 'Pause'}
-          >
-            {paused ? '▶️ Resume' : '⏸️ Pause'}
-          </button>
-          <button
-            onClick={() => triggerTurn()}
-            disabled={!paused}
-            title="Step one turn"
-          >
-            ➡️
+            ⏭️ New Gen
           </button>
         </div>
-        <button
-          disabled={turn === 0}
-          onClick={() => {
-            generateWorld()
-            setTurn(0)
-          }}
-        >
-          ⏭️ New Gen
-        </button>
       </div>
 
       <div className="content">
@@ -1157,30 +1187,57 @@ function App() {
             ))}
           </div>
           <div className="gen-tab-content">
-          {(() => {
-            const stats = deathStatsPerGeneration[activeGenTab] || {
-              reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
-              turns: 0,
-              highestAge: 0,
-              energyStart: 0,
-              births: 0,
-              consumedEnergy: 0,
-              hpGainedFromEating: 0
-            }
-            return (
-              <ul>
-                <li>turns: {stats.turns}</li>
-                <li>highest_age: {stats.highestAge}</li>
-                <li>energy_start: {stats.energyStart}</li>
-                <li>births: {stats.births}</li>
-                <li>consumed_energy: {stats.consumedEnergy}</li>
-                <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
-                <li>eaten: {stats.reasons.eaten}</li>
-                <li>out_of_world: {stats.reasons.out_of_world}</li>
-                <li>no_hp: {stats.reasons.no_hp}</li>
-              </ul>
-            )
-          })()}
+            {(() => {
+              const stats = deathStatsPerGeneration[activeGenTab] || {
+                reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
+                turns: 0,
+                highestAge: 0,
+                energyStart: 0,
+                births: 0,
+                consumedEnergy: 0,
+                hpGainedFromEating: 0
+              }
+              return (
+                <ul>
+                  <li>turns: {stats.turns}</li>
+                  <li>highest_age: {stats.highestAge}</li>
+                  <li>energy_start: {stats.energyStart}</li>
+                  <li>births: {stats.births}</li>
+                  <li>consumed_energy: {stats.consumedEnergy}</li>
+                  <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
+                  <li>eaten: {stats.reasons.eaten}</li>
+                  <li>out_of_world: {stats.reasons.out_of_world}</li>
+                  <li>no_hp: {stats.reasons.no_hp}</li>
+                </ul>
+              )
+            })()}
+            <div className="strongest-orbs-section">
+              <div className="strongest-orbs-title">Strongest Orbs</div>
+              <div className="saved-orbs-grid">
+                {((strongestOrbsPerGeneration[activeGenTab] || []) as Orb[]).length > 0 ? (
+                  strongestOrbsPerGeneration[activeGenTab].map((orb, idx) => {
+                    const color = orb.getColor()
+                    return (
+                      <div
+                        key={`saved-orb-${activeGenTab}-${idx}-${orb.id}`}
+                        className="saved-orb"
+                        title={`Age: ${orb.age}`}
+                        onClick={() => showOrbStory(orb)}
+                      >
+                        <div
+                          className="saved-orb-circle"
+                          style={{ backgroundColor: `rgb(${color.reds}, ${color.greens}, 0)` }}
+                        />
+                        <div className="saved-orb-id">{orb.name}</div>
+                        <div className="saved-orb-age">age: {orb.age}</div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="saved-orbs-empty">No strongest orbs saved yet.</div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="gen-chart">
             {(() => {
@@ -1296,24 +1353,24 @@ function App() {
                   y: { beginAtZero: true }
                 }
               }
-              return <Line data={data} options={options} />
+              return <Line data={data} options={options}/>
             })()}
           </div>
-          
+
         </div>
       </div>
 
       {selectedOrb && (
         <div className="orb-story">
           <div className="orb-story__header">
-            <div>{selectedOrb.id}</div>
+            <div>{selectedOrb.name}</div>
             <button onClick={() => setSelectedOrb(null)}>⤫</button>
           </div>
           <div className="commands-section">
             <div className="commands-title">Reactions Matrix</div>
             <div className="reactions-matrix">
               {(() => {
-                const directionLabels = ['Left','Right','Top','Bottom']
+                const directionLabels = [ 'Left', 'Right', 'Top', 'Bottom' ]
                 const signalLabels = [
                   'Out of world',
                   'Energy',
@@ -1378,11 +1435,30 @@ function App() {
 
           <div className="commands-section">
             <div className="commands-title">My Story</div>
-            <ol>
-              {selectedOrb.log.map((item, index) => (
-                <li key={index}>{item}</li>
+            <div className="log-column">
+              {selectedOrb.log.map((turnItems, turnIndex) => (
+                <div
+                  key={`log-col-${turnIndex}`}
+                  className="log-row"
+                  title={`Turn ${turnIndex}`}
+                >
+                  <div
+                    key={`log-${turnIndex}-index`}
+                    className="log-block"
+                  >
+                    {turnIndex}
+                  </div>
+                  {turnItems.map((entry, entryIndex) => (
+                    <div
+                      key={`log-${turnIndex}-${entryIndex}`}
+                      className="command-icon log-block"
+                    >
+                      {entry}
+                    </div>
+                  ))}
+                </div>
               ))}
-            </ol>
+            </div>
           </div>
         </div>
       )}
