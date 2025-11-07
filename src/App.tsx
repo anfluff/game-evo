@@ -13,6 +13,9 @@ import {
   type ChartOptions,
   type ChartData
 } from 'chart.js'
+import { SettingsPanel, loadSettings, type Settings } from './components/SettingsPanel'
+import { SavedOrbs } from './components/SavedOrbs'
+
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 /*
@@ -44,29 +47,31 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 // ---- SETUP -----
 
-const worldSize: number[] = [ 15, 25 ]
+const settings = loadSettings()
 
-const initialOrbHP = [ 8, 16 ]
-const initialOrbsCount = 30
-const newGenStrongestCount = 10
-const newGenOffspringPerParent = 3
+const worldSize: number[] = settings.worldSize
 
-const initialEnergyOnMap = 300
-const resetEnergyOnNewGenerations = false // true - сбрасывать энергию на новую генерацию, false - сохранять
+const initialOrbHP: number[] = settings.initialOrbHP
+const initialOrbsCount = settings.initialOrbsCount
+const newGenStrongestCount = settings.newGenStrongestCount
+const newGenOffspringPerParent = settings.newGenOffspringPerParent
 
-const splitHPThreshold = 6 // ??
-const hpGainByEnergyConsumption = 3
+const initialEnergyOnMap = settings.initialEnergyOnMap
+const resetEnergyOnNewGenerations = settings.resetEnergyOnNewGenerations // true - сбрасывать энергию на новую генерацию, false - сохранять
 
-const dnaLength = 36
-const reactionsLength = 5 // Number of signal categories used by reactions (columns)
-const reactionDirectionsLength = 4 // Number of directions that a signal can come from (rows)
+const splitHPThreshold = settings.splitHPThreshold // ??
+const hpGainByEnergyConsumption = settings.hpGainByEnergyConsumption
 
-const idLength = 6
-const initialTurnDuration = 100
+const dnaLength = settings.dnaLength
+const reactionsLength = settings.reactionsLength // Number of signal categories used by reactions (columns)
+const reactionDirectionsLength = settings.reactionDirectionsLength // Number of directions that a signal can come from (rows)
+
+const idLength = settings.idLength
+const initialTurnDuration = settings.initialTurnDuration
 // Visual constants for layout and transitions
-const cellSize = 48
-const cellGap = 4
-const orbSize = 36
+const cellSize = settings.cellSize
+const cellGap = settings.cellGap
+const orbSize = settings.orbSize
 
 // ---- CLASSES -----
 
@@ -956,6 +961,107 @@ function App() {
   const [ selectedOrb, setSelectedOrb ] = useState<Orb | null>(null)
   const [ paused, setPaused ] = useState(false)
   const [ activeGenTab, setActiveGenTab ] = useState(0)
+  const [ showSettings, setShowSettings ] = useState(false)
+  const [ draftSettings, setDraftSettings ] = useState<Settings>(settings)
+
+  // ---- Orb Generator state ----
+  type SavedOrb = {
+    id: string
+    name: string
+    dna: number[]
+    reactions: number[][]
+  }
+
+  const SAVED_ORBS_KEY = 'saved_orbs_v1'
+
+  function normalizeDna(dna: number[], len: number = dnaLength): number[] {
+    const base = Array.from({ length: len }, (_v, i) => dna[i] ?? orbCommands.STAY_IDLE)
+    return base.slice(0, len)
+  }
+
+  function normalizeReactions(reactions: number[][]): number[][] {
+    const rows = reactionDirectionsLength
+    const cols = reactionsLength
+    const out: number[][] = []
+    for (let r = 0; r < rows; r++) {
+      const row = reactions[r] ?? []
+      const normRow = Array.from({ length: cols }, (_v, i) => row[i] ?? orbCommands.STAY_IDLE).slice(0, cols)
+      out.push(normRow)
+    }
+    return out
+  }
+
+  function getColorFromDNA(dna: number[]) {
+    const greens = dna.reduce((sum, item) => item === orbCommands.CONSUME_ENERGY ? sum + item : sum, 0)
+    const reds = dna.reduce((sum, item) => ([ orbCommands.BITE_LEFT, orbCommands.BITE_RIGHT, orbCommands.BITE_UP, orbCommands.BITE_DOWN ].includes(item) ? sum + item : sum), 0)
+    return { reds, greens }
+  }
+
+  const [ savedOrbs, setSavedOrbs ] = useState<SavedOrb[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_ORBS_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.map((o: any) => ({
+        id: String(o.id ?? getRandomId(idLength)),
+        name: String(o.name ?? dnaToName(normalizeDna(Array.isArray(o.dna) ? o.dna : []))),
+        dna: normalizeDna(Array.isArray(o.dna) ? o.dna : []),
+        reactions: normalizeReactions(Array.isArray(o.reactions) ? o.reactions : [])
+      })) as SavedOrb[]
+    } catch {
+      return []
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED_ORBS_KEY, JSON.stringify(savedOrbs))
+    } catch {}
+  }, [ savedOrbs ])
+
+  const [ showOrbGenerator, setShowOrbGenerator ] = useState(false)
+  const [ editingOrbId, setEditingOrbId ] = useState<string | null>(null)
+  const [ genDNA, setGenDNA ] = useState<number[]>(normalizeDna(getRandomDNA()))
+  const [ genReactions, setGenReactions ] = useState<number[][]>(normalizeReactions(getRandomReactions()))
+  const [ genHP, setGenHP ] = useState<number>(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
+
+  function openOrbGenerator(existing?: SavedOrb) {
+    setPaused(true)
+    if (existing) {
+      setEditingOrbId(existing.id)
+      setGenDNA(normalizeDna(existing.dna))
+      setGenReactions(normalizeReactions(existing.reactions))
+      setGenHP(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
+    } else {
+      setEditingOrbId(null)
+      setGenDNA(normalizeDna(getRandomDNA()))
+      setGenReactions(normalizeReactions(getRandomReactions()))
+      setGenHP(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
+    }
+    setShowOrbGenerator(true)
+  }
+
+  function saveGeneratedOrb() {
+    const dnaNorm = normalizeDna(genDNA)
+    const reactNorm = normalizeReactions(genReactions)
+    const name = dnaToName(dnaNorm)
+    if (editingOrbId) {
+      setSavedOrbs(prev => prev.map(o => o.id === editingOrbId ? { ...o, name, dna: dnaNorm, reactions: reactNorm } : o))
+    } else {
+      const id = getRandomId(idLength)
+      setSavedOrbs(prev => [ ...prev, { id, name, dna: dnaNorm, reactions: reactNorm } ])
+    }
+    setShowOrbGenerator(false)
+    setEditingOrbId(null)
+  }
+
+  function spawnFromConfig(dna: number[], reactions: number[][], hp: number) {
+    const [ x, y ] = getRandomEmptyCell()
+    spawnOrb(x, y, hp, dna, reactions)
+    setSelectedOrb(null)
+    forceRerender?.()
+  }
 
   const aliveOrbsCount: number = orbs.filter(orb => orb.hp > 0).length
 
@@ -1103,6 +1209,21 @@ function App() {
           >
             ⏭️ New Gen
           </button>
+          <button
+            onClick={() => {
+              setPaused(true)
+              setShowSettings(true)
+            }}
+            title="Open settings"
+          >
+            ⚙️
+          </button>
+          <button
+            onClick={() => openOrbGenerator()}
+            title="Generate orb"
+          >
+            🔮 Generate Orb
+          </button>
         </div>
       </div>
 
@@ -1164,7 +1285,9 @@ function App() {
                   className="cell"
                 >
                   {worldEnergy[rowIndex]?.[colIndex] > 0 && (
-                    <div className="energy-indicator">
+                    <div
+                      className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
+                    >
                       {worldEnergy[rowIndex][colIndex]}
                     </div>
                   )}
@@ -1238,6 +1361,7 @@ function App() {
                 )}
               </div>
             </div>
+            {/* Saved Orbs moved to a dedicated bottom panel */}
           </div>
           <div className="gen-chart">
             {(() => {
@@ -1461,6 +1585,106 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Bottom panels: Saved Orbs in a dedicated section */}
+      <div className="bottom-panels">
+        <SavedOrbs
+          title="Saved Orbs"
+          savedOrbs={savedOrbs}
+          getColorFromDNA={getColorFromDNA}
+          onSpawn={(o) => spawnFromConfig(o.dna, o.reactions, getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))}
+          onEdit={(o) => openOrbGenerator(o)}
+          onDelete={(id) => setSavedOrbs(prev => prev.filter(x => x.id !== id))}
+        />
+      </div>
+
+      {showOrbGenerator && (
+        <div className="orb-generator-panel">
+          <div className="orb-generator-header">
+            <div>{editingOrbId ? 'Edit Orb' : 'Orb Generator'}</div>
+            <button onClick={() => { setShowOrbGenerator(false); setEditingOrbId(null) }}>⤫</button>
+          </div>
+          <div className="orb-generator-content">
+            <div className="settings-row">
+              <label>Spawn HP</label>
+              <input className="settings-input" type="number" min={1} value={genHP}
+                     onChange={(e) => setGenHP(Math.max(1, Number(e.target.value)))} />
+            </div>
+
+            <div className="generator-section-title">DNA</div>
+            <div className="dna-editor">
+              {genDNA.map((val, idx) => (
+                <select key={`dna-edit-${idx}`} className="settings-input" value={val}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          setGenDNA(cur => {
+                            const next = [ ...cur ]
+                            next[idx] = v
+                            return next
+                          })
+                        }}
+                >
+                  {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
+                    const id = Number(idStr)
+                    return <option key={`dna-opt-${idx}-${id}`} value={id}>{info.icon} {info.label}</option>
+                  })}
+                </select>
+              ))}
+            </div>
+
+            <div className="generator-section-title">Reactions</div>
+            {(() => {
+              const directionLabels = [ 'Left', 'Right', 'Top', 'Bottom' ]
+              const signalLabels = [ 'Out of world', 'Energy', 'Empty', 'Smaller orb', 'Bigger orb' ]
+              return (
+                <div className="reaction-editor">
+                  <div className="sig-label">Signals</div>
+                  {signalLabels.map((label, idx) => (
+                    <div key={`gen-sig-${idx}`} className="sig-label">{label}</div>
+                  ))}
+
+                  {genReactions.map((row, dirIndex) => (
+                    <>
+                      <div key={`gen-dir-${dirIndex}`} className="dir-label">{directionLabels[dirIndex]}</div>
+                      {row.map((cell, colIndex) => (
+                        <select key={`gen-r-cell-${dirIndex}-${colIndex}`} className="settings-input" value={cell}
+                                onChange={(e) => {
+                                  const id = Number(e.target.value)
+                                  setGenReactions(cur => cur.map((r, rIdx) => rIdx !== dirIndex ? r : r.map((c, cIdx) => cIdx !== colIndex ? c : id)))
+                                }}
+                        >
+                          {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
+                            const id = Number(idStr)
+                            return <option key={`gen-r-opt-${dirIndex}-${colIndex}-${id}`} value={id}>{info.icon} {info.label}</option>
+                          })}
+                        </select>
+                      ))}
+                    </>
+                  ))}
+                </div>
+              )
+            })()}
+
+            <div className="settings-actions">
+              <button onClick={() => saveGeneratedOrb()} title="Save orb">💾 Save</button>
+              <button onClick={() => { spawnFromConfig(normalizeDna(genDNA), normalizeReactions(genReactions), genHP); setShowOrbGenerator(false); setEditingOrbId(null) }} title="Spawn orb">🪄 Spawn</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettings && (
+        <SettingsPanel
+          draftSettings={draftSettings}
+          setDraftSettings={setDraftSettings}
+          onClose={() => setShowSettings(false)}
+          savedOrbs={savedOrbs}
+          getColorFromDNA={getColorFromDNA}
+          onSpawn={(o) => spawnFromConfig(o.dna, o.reactions, getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))}
+          onEdit={(o) => openOrbGenerator(o)}
+          onDelete={(id) => setSavedOrbs(prev => prev.filter(x => x.id !== id))}
+        />
       )}
     </>
   )
