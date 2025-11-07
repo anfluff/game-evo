@@ -12,14 +12,12 @@ export type Settings = {
   resetEnergyOnNewGenerations: boolean
   splitHPThreshold: number
   hpGainByEnergyConsumption: number
+  energyCreatedOnDeath: number
   dnaLength: number
   reactionsLength: number
   reactionDirectionsLength: number
   idLength: number
   initialTurnDuration: number
-  cellSize: number
-  cellGap: number
-  orbSize: number
 }
 
 export const defaultSettings: Settings = {
@@ -32,14 +30,12 @@ export const defaultSettings: Settings = {
   resetEnergyOnNewGenerations: false,
   splitHPThreshold: 6,
   hpGainByEnergyConsumption: 3,
+  energyCreatedOnDeath: 2,
   dnaLength: 36,
   reactionsLength: 5,
   reactionDirectionsLength: 4,
   idLength: 6,
   initialTurnDuration: 100,
-  cellSize: 48,
-  cellGap: 4,
-  orbSize: 36
 }
 
 const STORAGE_KEY = 'life1_settings'
@@ -82,8 +78,6 @@ export function sanitizeSettings(s: Settings): Settings {
   const hpMin = clamp(s.initialOrbHP?.[0] ?? defaultSettings.initialOrbHP[0], 1)
   const hpMaxRaw = s.initialOrbHP?.[1] ?? defaultSettings.initialOrbHP[1]
   const hpMax = clamp(hpMaxRaw, hpMin)
-  const cellSize = clamp(s.cellSize ?? defaultSettings.cellSize, 12)
-  const orbSize = clamp(s.orbSize ?? defaultSettings.orbSize, 8, cellSize)
 
   return {
     worldSize: [rows, cols],
@@ -95,14 +89,12 @@ export function sanitizeSettings(s: Settings): Settings {
     resetEnergyOnNewGenerations: Boolean(s.resetEnergyOnNewGenerations),
     splitHPThreshold: clamp(s.splitHPThreshold ?? defaultSettings.splitHPThreshold, 1),
     hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
+    energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
     dnaLength: clamp(s.dnaLength ?? defaultSettings.dnaLength, 1),
     reactionsLength: clamp(s.reactionsLength ?? defaultSettings.reactionsLength, 1),
     reactionDirectionsLength: clamp(s.reactionDirectionsLength ?? defaultSettings.reactionDirectionsLength, 1),
     idLength: clamp(s.idLength ?? defaultSettings.idLength, 1),
     initialTurnDuration: clamp(s.initialTurnDuration ?? defaultSettings.initialTurnDuration, 1),
-    cellSize,
-    cellGap: clamp(s.cellGap ?? defaultSettings.cellGap, 0),
-    orbSize
   }
 }
 
@@ -208,6 +200,11 @@ export function SettingsPanel({
           <input className="settings-input" type="number" min={0} value={draftSettings.hpGainByEnergyConsumption}
                  onChange={(e) => setDraftSettings(s => ({ ...s, hpGainByEnergyConsumption: Math.max(0, Number(e.target.value)) }))} />
         </div>
+        <div className="settings-row">
+          <label>Energy generated on death</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.energyCreatedOnDeath}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energyCreatedOnDeath: Math.max(0, Number(e.target.value)) }))} />
+        </div>
 
         <div className="settings-row">
           <label>DNA Length</label>
@@ -234,22 +231,6 @@ export function SettingsPanel({
           <label>Initial Turn Duration (ms)</label>
           <input className="settings-input" type="number" min={1} value={draftSettings.initialTurnDuration}
                  onChange={(e) => setDraftSettings(s => ({ ...s, initialTurnDuration: Math.max(1, Number(e.target.value)) }))} />
-        </div>
-
-        <div className="settings-row">
-          <label>Cell Size (px)</label>
-          <input className="settings-input" type="number" min={12} value={draftSettings.cellSize}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, cellSize: Math.max(12, Number(e.target.value)) }))} />
-        </div>
-        <div className="settings-row">
-          <label>Cell Gap (px)</label>
-          <input className="settings-input" type="number" min={0} value={draftSettings.cellGap}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, cellGap: Math.max(0, Number(e.target.value)) }))} />
-        </div>
-        <div className="settings-row">
-          <label>Orb Size (px)</label>
-          <input className="settings-input" type="number" min={8} value={draftSettings.orbSize}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, orbSize: Math.max(8, Math.min(Number(e.target.value), s.cellSize)) }))} />
         </div>
 
         <div className="settings-actions">

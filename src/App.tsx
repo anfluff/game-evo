@@ -61,6 +61,7 @@ const resetEnergyOnNewGenerations = settings.resetEnergyOnNewGenerations // true
 
 const splitHPThreshold = settings.splitHPThreshold // ??
 const hpGainByEnergyConsumption = settings.hpGainByEnergyConsumption
+const energyCreatedOnDeath = settings.energyCreatedOnDeath
 
 const dnaLength = settings.dnaLength
 const reactionsLength = settings.reactionsLength // Number of signal categories used by reactions (columns)
@@ -68,10 +69,10 @@ const reactionDirectionsLength = settings.reactionDirectionsLength // Number of 
 
 const idLength = settings.idLength
 const initialTurnDuration = settings.initialTurnDuration
-// Visual constants for layout and transitions
-const cellSize = settings.cellSize
-const cellGap = settings.cellGap
-const orbSize = settings.orbSize
+
+const cellSize = 48
+const cellGap = 4
+const orbSize = 36
 
 // ---- CLASSES -----
 
@@ -487,12 +488,6 @@ class Orb {
     this.hp -= amount
     this.addToLog(`❤️${this.hp}`)
     if (this.hp <= 0) {
-      if (withinWorldBoundaries(this.x, this.y)) {
-        this.layDownEnergy(1)
-      }
-      if (!this.deathReason) {
-        this.deathReason = deathReasons.NO_HP
-      }
       this.die()
     }
   }
@@ -505,6 +500,13 @@ class Orb {
   }
 
   die() {
+    if (withinWorldBoundaries(this.x, this.y)) {
+      this.layDownEnergy(energyCreatedOnDeath)
+    }
+    if (!this.deathReason) {
+      this.deathReason = deathReasons.NO_HP
+    }
+
     this.addToLog(`☠️ I died at age of ${this.age}`)
     registerDeath(this.deathReason ?? deathReasons.NO_HP, this.age)
     lastTurnDeadOrbs.push(this)
