@@ -361,8 +361,9 @@ class Orb {
 
   eat (prey: Orb) {
     if (prey instanceof Orb) {
-      // Only eat prey strictly smaller by current hp
-      if (prey.hp >= this.hp) {
+      const canEat = prey.hp < this.hp / 2
+
+      if (!canEat) {
         this.addToLog(`> I failed to eat ${prey.id} (prey not smaller)`)
         return
       }
