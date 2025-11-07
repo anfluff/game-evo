@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content="0; url=/game-evo/" />
+    <script>
+      // Preserve query/hash when redirecting to the project root
+      (function () {
+        var repo = '/game-evo/';
+        var target = repo + (location.search || '') + (location.hash || '');
+        if (!location.pathname.startsWith(repo)) {
+          location.replace(target);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    Redirecting…
+  </body>
+</html>
