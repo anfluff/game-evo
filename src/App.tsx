@@ -31,18 +31,6 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 - определять родство с соседями - похожи ли днк
 - сами мочь определять порог деления
 
-ну и плюс нужно вынести все захардкоженные параметры в начальные настройки
-- размер поля
-- начальное количество орбов
-- начальное здоровье орбов
-- количество энергии на поле
-- порог здоровья для деления
-- длина днк
-- отбор
-
-+ сохранять лог каждого раунда? чтобы посмотреть что там происходило и поисследовать орбов
-+ конструктор орба
-
  */
 
 // ---- SETUP -----
@@ -223,7 +211,7 @@ class Orb {
         // request re-render to clear the glow in UI
         forceRerender?.()
       }
-    }, 1000)
+    }, 300)
   }
 
   act() {
@@ -315,7 +303,7 @@ class Orb {
     if (!withinWorldBoundaries(x, y)) {
       this.addToLog(`I jump out of the world`)
       this.deathReason = deathReasons.OUT_OF_WORLD
-      this.loseHp(this.hp)
+      this.die()
       return
     }
 
@@ -1610,26 +1598,36 @@ function App() {
           <div className="orb-generator-content">
             <div className="settings-row">
               <label>Spawn HP</label>
-              <input className="settings-input" type="number" min={1} value={genHP}
-                     onChange={(e) => setGenHP(Math.max(1, Number(e.target.value)))} />
+              <input
+                className="settings-input"
+                type="number"
+                min={1}
+                value={genHP}
+                onChange={(e) => setGenHP(Math.max(1, Number(e.target.value)))}
+              />
             </div>
 
             <div className="generator-section-title">DNA</div>
             <div className="dna-editor">
               {genDNA.map((val, idx) => (
-                <select key={`dna-edit-${idx}`} className="settings-input" value={val}
-                        onChange={(e) => {
-                          const v = Number(e.target.value)
-                          setGenDNA(cur => {
-                            const next = [ ...cur ]
-                            next[idx] = v
-                            return next
-                          })
-                        }}
+                <select
+                  key={`dna-edit-${idx}`}
+                  className="settings-input"
+                  value={val}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    setGenDNA(cur => {
+                      const next = [ ...cur ]
+                      next[idx] = v
+                      return next
+                    })
+                  }}
                 >
                   {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
                     const id = Number(idStr)
-                    return <option key={`dna-opt-${idx}-${id}`} value={id}>{info.icon} {info.label}</option>
+                    return (
+                      <option key={`dna-opt-${idx}-${id}`} value={id}>{info.icon} {info.label}</option>
+                    )
                   })}
                 </select>
               ))}
@@ -1643,22 +1641,52 @@ function App() {
                 <div className="reaction-editor">
                   <div className="sig-label">Signals</div>
                   {signalLabels.map((label, idx) => (
-                    <div key={`gen-sig-${idx}`} className="sig-label">{label}</div>
+                    <div
+                      key={`gen-sig-${idx}`}
+                      className="sig-label"
+                    >
+                      {label}
+                    </div>
                   ))}
 
                   {genReactions.map((row, dirIndex) => (
                     <>
-                      <div key={`gen-dir-${dirIndex}`} className="dir-label">{directionLabels[dirIndex]}</div>
+                      <div
+                        key={`gen-dir-${dirIndex}`}
+                        className="dir-label"
+                      >
+                        {directionLabels[dirIndex]}
+                      </div>
                       {row.map((cell, colIndex) => (
-                        <select key={`gen-r-cell-${dirIndex}-${colIndex}`} className="settings-input" value={cell}
-                                onChange={(e) => {
-                                  const id = Number(e.target.value)
-                                  setGenReactions(cur => cur.map((r, rIdx) => rIdx !== dirIndex ? r : r.map((c, cIdx) => cIdx !== colIndex ? c : id)))
-                                }}
+                        <select
+                          key={`gen-r-cell-${dirIndex}-${colIndex}`}
+                          className="settings-input"
+                          value={cell}
+                          onChange={(e) => {
+                            const id = Number(e.target.value)
+                            setGenReactions(cur => {
+                              return cur.map((r, rIdx) => {
+                                return rIdx !== dirIndex
+                                  ? r
+                                  : r.map((c, cIdx) => {
+                                    return cIdx !== colIndex
+                                      ? c
+                                      : id
+                                  })
+                              })
+                            })
+                          }}
                         >
                           {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
                             const id = Number(idStr)
-                            return <option key={`gen-r-opt-${dirIndex}-${colIndex}-${id}`} value={id}>{info.icon} {info.label}</option>
+                            return (
+                              <option
+                                key={`gen-r-opt-${dirIndex}-${colIndex}-${id}`}
+                                value={id}
+                              >
+                                {info.icon} {info.label}
+                              </option>
+                            )
                           })}
                         </select>
                       ))}
@@ -1669,8 +1697,22 @@ function App() {
             })()}
 
             <div className="settings-actions">
-              <button onClick={() => saveGeneratedOrb()} title="Save orb">💾 Save</button>
-              <button onClick={() => { spawnFromConfig(normalizeDna(genDNA), normalizeReactions(genReactions), genHP); setShowOrbGenerator(false); setEditingOrbId(null) }} title="Spawn orb">🪄 Spawn</button>
+              <button
+                onClick={() => saveGeneratedOrb()}
+                title="Save orb"
+              >
+                💾 Save
+              </button>
+              <button
+                onClick={() => {
+                  spawnFromConfig(normalizeDna(genDNA), normalizeReactions(genReactions), genHP)
+                  setShowOrbGenerator(false)
+                  setEditingOrbId(null)
+                }}
+                title="Spawn orb"
+              >
+                🪄 Spawn
+              </button>
             </div>
           </div>
         </div>
@@ -1681,11 +1723,6 @@ function App() {
           draftSettings={draftSettings}
           setDraftSettings={setDraftSettings}
           onClose={() => setShowSettings(false)}
-          savedOrbs={savedOrbs}
-          getColorFromDNA={getColorFromDNA}
-          onSpawn={(o) => spawnFromConfig(o.dna, o.reactions, getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))}
-          onEdit={(o) => openOrbGenerator(o)}
-          onDelete={(id) => setSavedOrbs(prev => prev.filter(x => x.id !== id))}
         />
       )}
     </>

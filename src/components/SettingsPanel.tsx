@@ -1,5 +1,4 @@
 import React from 'react'
-import { SavedOrbs } from './SavedOrbs'
 
 // Settings model and helpers (moved from src/settings.ts)
 export type Settings = {
@@ -98,30 +97,16 @@ export function sanitizeSettings(s: Settings): Settings {
   }
 }
 
-// Types shared with children
-type Color = { reds: number; greens: number }
-type SavedOrb = { id: string; name: string; dna: number[]; reactions: number[][] }
-
 type SettingsPanelProps = {
   draftSettings: Settings
   setDraftSettings: React.Dispatch<React.SetStateAction<Settings>>
   onClose: () => void
-  savedOrbs: SavedOrb[]
-  getColorFromDNA: (dna: number[]) => Color
-  onSpawn: (orb: SavedOrb) => void
-  onEdit: (orb: SavedOrb) => void
-  onDelete: (id: string) => void
 }
 
 export function SettingsPanel({
   draftSettings,
   setDraftSettings,
   onClose,
-  savedOrbs,
-  getColorFromDNA,
-  onSpawn,
-  onEdit,
-  onDelete
 }: SettingsPanelProps) {
   return (
     <div className="settings-panel">
@@ -130,17 +115,6 @@ export function SettingsPanel({
         <button onClick={onClose}>⤫</button>
       </div>
       <div className="settings-content">
-        {/* Saved Orbs management inside settings */}
-        <SavedOrbs
-          title="Saved Orbs"
-          savedOrbs={savedOrbs}
-          getColorFromDNA={getColorFromDNA}
-          onSpawn={onSpawn}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          compact
-        />
-
         <div className="settings-row">
           <label>World rows</label>
           <input className="settings-input" type="number" min={1} value={draftSettings.worldSize[0]}

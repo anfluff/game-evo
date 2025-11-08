@@ -176,15 +176,15 @@
 }
 
 .orb.glow-white {
-    box-shadow: 0 0 24px #ffffff;
+    box-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
 }
 
 .orb.glow-red {
-    box-shadow: 0 0 24px #e74c3c;
+    box-shadow: 0 0 24px rgba(255, 0, 0, 0.25);
 }
 
 .orb.glow-green {
-    box-shadow: 0 0 24px #2ecc71;
+    box-shadow: 0 0 24px rgba(0, 255, 0, 0.25);
 }
 
 .grid.energy-layer {
