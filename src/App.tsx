@@ -13,7 +13,7 @@ import {
   type ChartOptions,
   type ChartData
 } from 'chart.js'
-import { SettingsPanel, loadSettings, type Settings } from './components/SettingsPanel'
+import { SettingsPanel, loadSettings, saveSettings, type Settings } from './components/SettingsPanel'
 import { SavedOrbs } from './components/SavedOrbs'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
@@ -61,6 +61,9 @@ const initialTurnDuration = settings.initialTurnDuration
 const cellSize = 48
 const cellGap = 4
 const orbSize = 36
+
+// Global flag used by non-React logic (e.g., Orb.triggerGlow)
+let graphicsEffectsEnabled = settings.graphicEffects
 
 // ---- CLASSES -----
 
@@ -183,7 +186,7 @@ class Orb {
 
   dna: number[]
   dnaPointer: number = 0
-  reactions: number[][]
+  reactions: number[][] // matrix [direction][signal] - orb reactions on signals from different directions
 
   log: string[][] = []
   deathReason: DeathReason | null = null
@@ -202,6 +205,10 @@ class Orb {
   }
 
   triggerGlow(className: 'glow-white' | 'glow-red' | 'glow-green') {
+    // Suppress glow when graphic effects are disabled
+    if (!graphicsEffectsEnabled) {
+      return
+    }
     this.glow = className
     // request immediate re-render so UI reflects glow state even when paused
     forceRerender?.()
@@ -300,13 +307,6 @@ class Orb {
   // -- commands --
 
   move(x: number, y: number) {
-    if (!withinWorldBoundaries(x, y)) {
-      this.addToLog(`I jump out of the world`)
-      this.deathReason = deathReasons.OUT_OF_WORLD
-      this.die()
-      return
-    }
-
     const occupants = getCellOrbs(x, y)
     if (occupants.length > 0) {
       this.addToLog(`It is occupied`)
@@ -315,6 +315,13 @@ class Orb {
 
     this.x = x
     this.y = y
+
+    if (!withinWorldBoundaries(x, y)) {
+      this.addToLog(`I jump out of the world`)
+      this.deathReason = deathReasons.OUT_OF_WORLD
+      this.die()
+      return
+    }
 
     this.addToLog(`It worked`)
   }
@@ -435,7 +442,9 @@ class Orb {
 
     if (this.hp >= splitHPThreshold) {
       this.triggerGlow('glow-green')
+
       const child = spawnOrb(x, y, Math.ceil(this.hp / 2), this.dna, this.reactions, this.name)
+
       this.loseHp(Math.floor(this.hp / 2))
       this.addToLog(`It spawned ${child.name}`)
       registerBirth()
@@ -451,6 +460,7 @@ class Orb {
       registerEnergyConsumed(1)
       this.addToLog(`It worked`)
       this.gainHp(hpGainByEnergyConsumption)
+      registerHpGainedFromConsumingEnergy(hpGainByEnergyConsumption)
       this.preventAgingThisTurn = true
       this.triggerGlow('glow-white')
     } else {
@@ -831,6 +841,7 @@ function getMutatedDNA(ancestorDNA: number[]) {
   return newDNA
 }
 
+// Mutate one random cell in the reactions matrix
 function getMutatedReactions(ancestorReactions: number[][]) {
   // Deep copy matrix
   const newReactions = ancestorReactions.map(row => [ ...row ])
@@ -850,6 +861,7 @@ function getMutatedReactions(ancestorReactions: number[][]) {
   return newReactions
 }
 
+// Generate a random reactions matrix
 function getRandomReactions() {
   const exclude = [
     orbCommands.WATCH_LEFT,
@@ -880,6 +892,7 @@ type GenerationStats = {
   births: number
   consumedEnergy: number
   hpGainedFromEating: number
+  hpGainedFromConsumingEnergy: number
 }
 
 let currentGeneration = 0
@@ -902,7 +915,8 @@ function startNewGeneration() {
     energyStart: 0,
     births: 0,
     consumedEnergy: 0,
-    hpGainedFromEating: 0
+    hpGainedFromEating: 0,
+    hpGainedFromConsumingEnergy: 0
   }
 }
 
@@ -940,11 +954,29 @@ function registerHpGainedFromEating(amount: number) {
   deathStatsPerGeneration[currentGeneration - 1].hpGainedFromEating += Math.max(0, amount)
 }
 
+function registerHpGainedFromConsumingEnergy(amount: number) {
+  if (currentGeneration === 0) {
+    startNewGeneration()
+  }
+  deathStatsPerGeneration[currentGeneration - 1].hpGainedFromConsumingEnergy += Math.max(0, amount)
+}
+
 // -------------
 
 generateWorld()
 
 function App() {
+  const [graphicsEnabled, setGraphicsEnabled] = useState(settings.graphicEffects)
+
+  // Toggle global CSS class when graphics effects change
+  useEffect(() => {
+    graphicsEffectsEnabled = graphicsEnabled
+    if (!graphicsEnabled) {
+      document.body.classList.add('no-effects')
+    } else {
+      document.body.classList.remove('no-effects')
+    }
+  }, [graphicsEnabled])
   const [ turn, setTurn ] = useState(0)
   const [ worldNum, setWorldNum ] = useState(0)
   const [ turnDuration, setTurnDuration ] = useState(initialTurnDuration)
@@ -1152,30 +1184,20 @@ function App() {
           </button>
 
           <div>
-            <button
+            <label style={{ marginRight: 6 }}>Speed</label>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>Slow</span>
+            <input
+              type="range"
+              min={1}
+              max={500}
+              step={1}
+              value={Math.max(1, Math.min(500, 501 - turnDuration))}
               disabled={turn === 0}
-              onClick={() => setTurnDuration(1)}
-            >
-              1
-            </button>
-            <button
-              disabled={turn === 0}
-              onClick={() => setTurnDuration(10)}
-            >
-              10
-            </button>
-            <button
-              disabled={turn === 0}
-              onClick={() => setTurnDuration(100)}
-            >
-              100
-            </button>
-            <button
-              disabled={turn === 0}
-              onClick={() => setTurnDuration(500)}
-            >
-              500
-            </button>
+              onChange={(e) => setTurnDuration(501 - Number(e.target.value))}
+              style={{ width: 160, margin: '0 8px', verticalAlign: 'middle' }}
+              title="Turn speed (slow ↔ fast)"
+            />
+            <span style={{ fontSize: 12, opacity: 0.8 }}>Fast</span>
             <button
               onClick={() => setPaused(p => !p)}
               title={paused ? 'Resume' : 'Pause'}
@@ -1199,6 +1221,21 @@ function App() {
           >
             ⏭️ New Gen
           </button>
+          <label title="Toggle graphics effects (animations, glows)">
+            Graphics
+            <input
+              type="checkbox"
+              checked={graphicsEnabled}
+              onChange={(e) => {
+                const enabled = e.target.checked
+                setGraphicsEnabled(enabled)
+                // Persist setting without restart
+                const next: Settings = { ...settings, graphicEffects: enabled }
+                saveSettings(next)
+              }}
+              style={{ marginLeft: 6 }}
+            />
+          </label>
           <button
             onClick={() => {
               setPaused(true)
@@ -1289,15 +1326,42 @@ function App() {
 
         <div className="right-panel">
           <div className="gen-tabs">
-            {deathStatsPerGeneration.map((_stats, idx) => (
-              <button
-                key={`gen-tab-${idx}`}
-                className={activeGenTab === idx ? 'active' : ''}
-                onClick={() => setActiveGenTab(idx)}
-              >
-                {idx + 1}
-              </button>
-            ))}
+            <button
+              onClick={() => setActiveGenTab(0)}
+              disabled={activeGenTab === 0}
+            >
+              first
+            </button>
+            <button
+              onClick={() => setActiveGenTab(Math.max(0, activeGenTab - 1))}
+              disabled={activeGenTab === 0}
+            >
+              &lt;
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={Math.max(1, deathStatsPerGeneration.length)}
+              value={Math.min(Math.max(1, activeGenTab + 1), Math.max(1, deathStatsPerGeneration.length))}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                if (Number.isNaN(v)) return
+                const clamped = Math.max(1, Math.min(v, Math.max(1, deathStatsPerGeneration.length)))
+                setActiveGenTab(clamped - 1)
+              }}
+            />
+            <button
+              onClick={() => setActiveGenTab(Math.min(deathStatsPerGeneration.length - 1, activeGenTab + 1))}
+              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+            >
+              &gt;
+            </button>
+            <button
+              onClick={() => setActiveGenTab(Math.max(0, deathStatsPerGeneration.length - 1))}
+              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+            >
+              last
+            </button>
           </div>
           <div className="gen-tab-content">
             {(() => {
@@ -1308,7 +1372,8 @@ function App() {
                 energyStart: 0,
                 births: 0,
                 consumedEnergy: 0,
-                hpGainedFromEating: 0
+                hpGainedFromEating: 0,
+                hpGainedFromConsumingEnergy: 0
               }
               return (
                 <ul>
@@ -1317,6 +1382,7 @@ function App() {
                   <li>energy_start: {stats.energyStart}</li>
                   <li>births: {stats.births}</li>
                   <li>consumed_energy: {stats.consumedEnergy}</li>
+                  <li>hp_gained_consuming_energy: {stats.hpGainedFromConsumingEnergy}</li>
                   <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
                   <li>eaten: {stats.reasons.eaten}</li>
                   <li>out_of_world: {stats.reasons.out_of_world}</li>
@@ -1404,6 +1470,16 @@ function App() {
                     fill: false
                   },
                   {
+                    label: 'hp_gained_consuming_energy',
+                    data: gens.map(s => s.hpGainedFromConsumingEnergy),
+                    borderColor: '#8e44ad',
+                    backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
                     label: 'births',
                     data: gens.map(s => s.births),
                     borderColor: '#1abc9c',
@@ -1458,6 +1534,7 @@ function App() {
               const options: ChartOptions<'line'> = {
                 responsive: true,
                 maintainAspectRatio: false,
+                ...(graphicsEnabled ? {} : { animation: false }),
                 plugins: {
                   legend: { position: 'bottom' },
                   title: { display: false }
@@ -1468,6 +1545,65 @@ function App() {
                 }
               }
               return <Line data={data} options={options}/>
+            })()}
+          </div>
+          <div className="gen-top-bottom">
+            {(() => {
+              const gens = deathStatsPerGeneration
+              if (!gens || gens.length === 0) {
+                return <div className="empty">No data yet</div>
+              }
+              const metrics = [
+                { key: 'turns', label: 'turns', getter: (s: GenerationStats) => s.turns },
+                { key: 'highest_age', label: 'highest_age', getter: (s: GenerationStats) => s.highestAge },
+                { key: 'energy_start', label: 'energy_start', getter: (s: GenerationStats) => s.energyStart },
+                { key: 'births', label: 'births', getter: (s: GenerationStats) => s.births },
+                { key: 'consumed_energy', label: 'consumed_energy', getter: (s: GenerationStats) => s.consumedEnergy },
+                { key: 'hp_gained_eating', label: 'hp_gained_eating', getter: (s: GenerationStats) => s.hpGainedFromEating },
+                { key: 'hp_gained_consuming_energy', label: 'hp_gained_consuming_energy', getter: (s: GenerationStats) => s.hpGainedFromConsumingEnergy },
+                { key: 'eaten', label: 'eaten', getter: (s: GenerationStats) => s.reasons.eaten },
+                { key: 'out_of_world', label: 'out_of_world', getter: (s: GenerationStats) => s.reasons.out_of_world },
+                { key: 'no_hp', label: 'no_hp', getter: (s: GenerationStats) => s.reasons.no_hp }
+              ]
+              const computeTopBottom = (values: number[]) => {
+                const pairs = values.map((v, i) => ({ i, v }))
+                const count = Math.min(5, pairs.length)
+                const top = [...pairs].sort((a, b) => b.v - a.v).slice(0, count)
+                const bottom = [...pairs].sort((a, b) => a.v - b.v).slice(0, count)
+                return { top, bottom }
+              }
+              return (
+                <div>
+                  <div className="strongest-orbs-title">Top 5 / Bottom 5 by stat</div>
+                  {metrics.map(m => {
+                    const values = gens.map(m.getter)
+                    const { top, bottom } = computeTopBottom(values)
+                    return (
+                      <div key={`metric-${m.key}`} className="metric-block">
+                        <div className="metric-name">{m.label}</div>
+                        <div className="metric-lists">
+                          <div className="metric-list">
+                            <div className="list-title">most</div>
+                            <ul>
+                              {top.map(p => (
+                                <li key={`${m.key}-top-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="metric-list">
+                            <div className="list-title">least</div>
+                            <ul>
+                              {bottom.map(p => (
+                                <li key={`${m.key}-bottom-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
             })()}
           </div>
 
@@ -1481,7 +1617,9 @@ function App() {
             <button onClick={() => setSelectedOrb(null)}>⤫</button>
           </div>
           <div className="commands-section">
-            <div className="commands-title">Reactions Matrix</div>
+            <div className="commands-title">
+              Reactions Matrix
+            </div>
             <div className="reactions-matrix">
               {(() => {
                 const directionLabels = [ 'Left', 'Right', 'Top', 'Bottom' ]
@@ -1495,9 +1633,15 @@ function App() {
                 return (
                   <>
                     {/* Header row aligned to the same grid columns */}
-                    <div className="reactions-row-title">Signals</div>
+                    <div className="reactions-row-title">
+                      Signals
+                    </div>
                     {signalLabels.map((label, idx) => (
-                      <div key={`sig-${idx}`} className="signal-label" title={label}>
+                      <div
+                        key={`sig-${idx}`}
+                        className="signal-label"
+                        title={label}
+                      >
                         {label}
                       </div>
                     ))}
@@ -1530,7 +1674,9 @@ function App() {
           </div>
 
           <div className="commands-section">
-            <div className="commands-title">DNA</div>
+            <div className="commands-title">
+              DNA
+            </div>
             <div className="commands-list">
               {selectedOrb.dna.map((id, index) => {
                 const info = orbCommandsInfo[id]

@@ -9,6 +9,7 @@ export type Settings = {
   newGenOffspringPerParent: number
   initialEnergyOnMap: number
   resetEnergyOnNewGenerations: boolean
+  graphicEffects: boolean
   splitHPThreshold: number
   hpGainByEnergyConsumption: number
   energyCreatedOnDeath: number
@@ -21,12 +22,13 @@ export type Settings = {
 
 export const defaultSettings: Settings = {
   worldSize: [15, 25],
-  initialOrbHP: [8, 16],
+  initialOrbHP: [20, 30],
   initialOrbsCount: 30,
   newGenStrongestCount: 10,
   newGenOffspringPerParent: 3,
   initialEnergyOnMap: 300,
   resetEnergyOnNewGenerations: false,
+  graphicEffects: true,
   splitHPThreshold: 6,
   hpGainByEnergyConsumption: 3,
   energyCreatedOnDeath: 2,
@@ -86,6 +88,7 @@ export function sanitizeSettings(s: Settings): Settings {
     newGenOffspringPerParent: clamp(s.newGenOffspringPerParent ?? defaultSettings.newGenOffspringPerParent, 1),
     initialEnergyOnMap: clamp(s.initialEnergyOnMap ?? defaultSettings.initialEnergyOnMap, 0),
     resetEnergyOnNewGenerations: Boolean(s.resetEnergyOnNewGenerations),
+    graphicEffects: typeof s.graphicEffects === 'boolean' ? s.graphicEffects : defaultSettings.graphicEffects,
     splitHPThreshold: clamp(s.splitHPThreshold ?? defaultSettings.splitHPThreshold, 1),
     hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
     energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
@@ -163,6 +166,8 @@ export function SettingsPanel({
           <input type="checkbox" checked={draftSettings.resetEnergyOnNewGenerations}
                  onChange={(e) => setDraftSettings(s => ({ ...s, resetEnergyOnNewGenerations: e.target.checked }))} />
         </div>
+
+        {/* Graphics effects toggle moved to the top actions bar */}
 
         <div className="settings-row">
           <label>Split HP Threshold</label>

@@ -30,6 +30,12 @@ body {
   min-height: 100vh;
 }
 
+/* Disable all animations and transitions when effects are off */
+.no-effects * {
+  transition: none !important;
+  animation: none !important;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
