@@ -2187,438 +2187,435 @@ function App() {
       </div>
 
       <div className="content">
+        <div
+          className="world"
+          style={{
+            width: `${worldPixelWidth}px`,
+            height: `${worldPixelHeight}px`
+          }}
+        >
+          <div
+            className="grid field"
+            style={{
+              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+              width: `${worldPixelWidth}px`,
+              height: `${worldPixelHeight}px`
+            }}
+          >
+            {world.map((row: number[], rowIndex: any) => (
+              row.map((_value: number, colIndex: any) => (
+                <div
+                  key={`cell-${rowIndex}-${colIndex}`}
+                  className="cell"
+                />
+              ))
+            ))}
+          </div>
+          <div
+            className="orbs-layer"
+            style={{
+              width: `${worldPixelWidth}px`,
+              height: `${worldPixelHeight}px`
+            }}
+          >
+            {orbs.filter(o => o.hp > 0).map((orb) => {
+              const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
+              const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
+              const isSelected = selectedOrb?.id === orb.id
+              return (
+                <div
+                  key={orb.id}
+                  id={`orb-${orb.id}`}
+                  className={`orb ${orb.glow} ${isSelected ? 'selected' : ''}`}
+                  style={{
+                    backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, ${orb.getColor().blues})`,
+                    transform: `translate(${left}px, ${top}px)`
+                  }}
+                  onClick={() => showOrbStory(orb)}
+                >
+                  {orb.hp}
+                </div>
+              )
+            })}
+          </div>
+          <div
+            className="grid energy-layer"
+            style={{
+              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+              width: `${worldPixelWidth}px`,
+              height: `${worldPixelHeight}px`
+            }}
+          >
+            {world.map((row: number[], rowIndex: any) => (
+              row.map((_value: number, colIndex: any) => (
+                <div
+                  key={`cell-${rowIndex}-${colIndex}`}
+                  className="cell"
+                >
+                  {worldEnergy[rowIndex]?.[colIndex] > 0 && (
+                    <div
+                      className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
+                    >
+                      {worldEnergy[rowIndex][colIndex]}
+                    </div>
+                  )}
+                </div>
+              ))
+            ))}
+          </div>
+        </div>
+
         {selectedOrb && (
           <div className="orb-story">
             <div className="orb-story__header">
               <div>{selectedOrb.name}</div>
               <button onClick={() => setSelectedOrb(null)}>⤫</button>
             </div>
-            <div className="commands-section">
-              <div className="commands-title">
-                Genes
-              </div>
-              {renderGenesTable(selectedOrb.genes)}
-            </div>
 
-            <div className="commands-section">
-              <div className="commands-title">
-                Motivations
+            <div className="orb-story__content">
+              <div className="commands-section">
+                <div className="commands-title">
+                  Genes
+                </div>
+                {renderGenesTable(selectedOrb.genes)}
               </div>
-              {renderMotivationsTable(selectedOrb.lastMotivations)}
-            </div>
 
-            <div className="commands-section">
-              <div className="commands-title">
-                Surroundings
+              <div className="commands-section">
+                <div className="commands-title">
+                  Motivations
+                </div>
+                {renderMotivationsTable(selectedOrb.lastMotivations)}
               </div>
-              {selectedOrb.lastPerception.length > 0 ? (
-                renderPerceptionGrid(
-                  selectedOrb.lastPerception,
-                  selectedOrb.lastScanRadius || scanRadius,
-                  selectedOrb.genes.max_energy_norm
-                )
-              ) : (
-                <div className="empty">No snapshot yet</div>
-              )}
-            </div>
 
-            <div className="commands-section">
-              <div className="commands-title">My Story</div>
-              <div className="log-column">
-                {selectedOrb.log.map((turnItems, turnIndex) => (
-                  <div
-                    key={`log-col-${turnIndex}`}
-                    className="log-row"
-                    title={`Turn ${turnIndex}`}
-                  >
+              <div className="commands-section">
+                <div className="commands-title">
+                  Surroundings
+                </div>
+                {selectedOrb.lastPerception.length > 0 ? (
+                  renderPerceptionGrid(
+                    selectedOrb.lastPerception,
+                    selectedOrb.lastScanRadius || scanRadius,
+                    selectedOrb.genes.max_energy_norm
+                  )
+                ) : (
+                  <div className="empty">No snapshot yet</div>
+                )}
+              </div>
+
+              <div className="commands-section">
+                <div className="commands-title">My Story</div>
+                <div className="log-column">
+                  {selectedOrb.log.map((turnItems, turnIndex) => (
                     <div
-                      key={`log-${turnIndex}-index`}
-                      className="log-block"
+                      key={`log-col-${turnIndex}`}
+                      className="log-row"
+                      title={`Turn ${turnIndex}`}
                     >
-                      {turnIndex}
-                    </div>
-                    {turnItems.map((entry, entryIndex) => (
                       <div
-                        key={`log-${turnIndex}-${entryIndex}`}
-                        className="log-block"
-                        style={{ minWidth: 'auto', padding: '0 4px' }}
+                        key={`log-${turnIndex}-index`}
                       >
-                        {entry}
+                        {turnIndex}.
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {turnItems.map((entry, entryIndex) => (
+                        <div
+                          key={`log-${turnIndex}-${entryIndex}`}
+                          className="log-block"
+                        >
+                          {entry}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        <div className="world-wrap">
-          <div className="world-scroll">
-            <div
-              className="world"
-              style={{
-                width: `${worldPixelWidth}px`,
-                height: `${worldPixelHeight}px`
-              }}
+        <div className="bottom-panels">
+          <div className="gen-tabs">
+            <button
+              onClick={() => setActiveGenTab(0)}
+              disabled={activeGenTab === 0}
             >
-              <div
-                className="grid field"
-                style={{
-                  gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-                  gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
-                  width: `${worldPixelWidth}px`,
-                  height: `${worldPixelHeight}px`
-                }}
-              >
-                {world.map((row: number[], rowIndex: any) => (
-                  row.map((_value: number, colIndex: any) => (
-                    <div
-                      key={`cell-${rowIndex}-${colIndex}`}
-                      className="cell"
-                    />
-                  ))
-                ))}
-              </div>
-              <div
-                className="orbs-layer"
-                style={{
-                  width: `${worldPixelWidth}px`,
-                  height: `${worldPixelHeight}px`
-                }}
-              >
-                {orbs.filter(o => o.hp > 0).map((orb) => {
-                  const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
-                  const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
-                  const isSelected = selectedOrb?.id === orb.id
-                  return (
-                    <div
-                      key={orb.id}
-                      id={`orb-${orb.id}`}
-                      className={`orb ${orb.glow} ${isSelected ? 'selected' : ''}`}
-                      style={{
-                        backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, ${orb.getColor().blues})`,
-                        transform: `translate(${left}px, ${top}px)`
-                      }}
-                      onClick={() => showOrbStory(orb)}
-                    >
-                      {orb.hp}
-                    </div>
-                  )
-                })}
-              </div>
-              <div
-                className="grid energy-layer"
-                style={{
-                  gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-                  gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
-                  width: `${worldPixelWidth}px`,
-                  height: `${worldPixelHeight}px`
-                }}
-              >
-                {world.map((row: number[], rowIndex: any) => (
-                  row.map((_value: number, colIndex: any) => (
-                    <div
-                      key={`cell-${rowIndex}-${colIndex}`}
-                      className="cell"
-                    >
-                      {worldEnergy[rowIndex]?.[colIndex] > 0 && (
-                        <div
-                          className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
-                        >
-                          {worldEnergy[rowIndex][colIndex]}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ))}
-              </div>
-            </div>
+              first
+            </button>
+            <button
+              onClick={() => setActiveGenTab(Math.max(0, activeGenTab - 1))}
+              disabled={activeGenTab === 0}
+            >
+              &lt;
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={Math.max(1, deathStatsPerGeneration.length)}
+              value={Math.min(Math.max(1, activeGenTab + 1), Math.max(1, deathStatsPerGeneration.length))}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                if (Number.isNaN(v)) return
+                const clamped = Math.max(1, Math.min(v, Math.max(1, deathStatsPerGeneration.length)))
+                setActiveGenTab(clamped - 1)
+              }}
+            />
+            <button
+              onClick={() => setActiveGenTab(Math.min(deathStatsPerGeneration.length - 1, activeGenTab + 1))}
+              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+            >
+              &gt;
+            </button>
+            <button
+              onClick={() => setActiveGenTab(Math.max(0, deathStatsPerGeneration.length - 1))}
+              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+            >
+              last
+            </button>
           </div>
-        </div>
-      </div>
-
-      <div className="bottom-panels">
-        <div className="gen-tabs">
-          <button
-            onClick={() => setActiveGenTab(0)}
-            disabled={activeGenTab === 0}
-          >
-            first
-          </button>
-          <button
-            onClick={() => setActiveGenTab(Math.max(0, activeGenTab - 1))}
-            disabled={activeGenTab === 0}
-          >
-            &lt;
-          </button>
-          <input
-            type="number"
-            min={1}
-            max={Math.max(1, deathStatsPerGeneration.length)}
-            value={Math.min(Math.max(1, activeGenTab + 1), Math.max(1, deathStatsPerGeneration.length))}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              if (Number.isNaN(v)) return
-              const clamped = Math.max(1, Math.min(v, Math.max(1, deathStatsPerGeneration.length)))
-              setActiveGenTab(clamped - 1)
-            }}
-          />
-          <button
-            onClick={() => setActiveGenTab(Math.min(deathStatsPerGeneration.length - 1, activeGenTab + 1))}
-            disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
-          >
-            &gt;
-          </button>
-          <button
-            onClick={() => setActiveGenTab(Math.max(0, deathStatsPerGeneration.length - 1))}
-            disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
-          >
-            last
-          </button>
-        </div>
-        <div className="gen-tab-content">
-          {(() => {
-            const stats = deathStatsPerGeneration[activeGenTab] || {
-              reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
-              turns: 0,
-              highestAge: 0,
-              energyStart: 0,
-              births: 0,
-              consumedEnergy: 0,
-              hpGainedFromEating: 0,
-              hpGainedFromConsumingEnergy: 0
-            }
-            return (
-              <ul>
-                <li>turns: {stats.turns}</li>
-                <li>highest_age: {stats.highestAge}</li>
-                <li>energy_start: {stats.energyStart}</li>
-                <li>births: {stats.births}</li>
-                <li>consumed_energy: {stats.consumedEnergy}</li>
-                <li>hp_gained_consuming_energy: {stats.hpGainedFromConsumingEnergy}</li>
-                <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
-                <li>eaten: {stats.reasons.eaten}</li>
-                <li>out_of_world: {stats.reasons.out_of_world}</li>
-                <li>no_hp: {stats.reasons.no_hp}</li>
-              </ul>
-            )
-          })()}
-          <div className="strongest-orbs-section">
-            <div className="strongest-orbs-title">Strongest Orbs</div>
-            <div className="saved-orbs-grid">
-              {((strongestOrbsPerGeneration[activeGenTab] || []) as Orb[]).length > 0 ? (
-                strongestOrbsPerGeneration[activeGenTab].map((orb, idx) => {
-                  const color = orb.getColor()
-                  return (
-                    <div
-                      key={`saved-orb-${activeGenTab}-${idx}-${orb.id}`}
-                      className="saved-orb"
-                      title={`Age: ${orb.age}`}
-                      onClick={() => showOrbStory(orb)}
-                    >
-                      <div
-                        className="saved-orb-circle"
-                        style={{ backgroundColor: `rgb(${color.reds}, ${color.greens}, ${color.blues})` }}
-                      />
-                      <div className="saved-orb-id">{orb.name}</div>
-                      <div className="saved-orb-age">age: {orb.age}</div>
-                    </div>
-                  )
-                })
-              ) : (
-                <div className="saved-orbs-empty">No strongest orbs saved yet.</div>
-              )}
-            </div>
-          </div>
-          {/* Saved Orbs moved to a dedicated bottom panel */}
-        </div>
-        <div className="gen-chart">
-          {(() => {
-            const gens = deathStatsPerGeneration
-            if (!gens || gens.length === 0) {
-              return <div className="empty">No data yet</div>
-            }
-            const labels = gens.map((_s, idx) => `Gen ${idx + 1}`)
-            const data: ChartData<'line'> = {
-              labels,
-              datasets: [
-                {
-                  label: 'turns',
-                  data: gens.map(s => s.turns),
-                  borderColor: '#4ea1f3',
-                  backgroundColor: 'rgba(78, 161, 243, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'highest_age',
-                  data: gens.map(s => s.highestAge),
-                  borderColor: '#f39c12',
-                  backgroundColor: 'rgba(243, 156, 18, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'energy_start',
-                  data: gens.map(s => s.energyStart),
-                  borderColor: '#3498db',
-                  backgroundColor: 'rgba(52, 152, 219, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'hp_gained_eating',
-                  data: gens.map(s => s.hpGainedFromEating),
-                  borderColor: '#f1c40f',
-                  backgroundColor: 'rgba(241, 196, 15, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'hp_gained_consuming_energy',
-                  data: gens.map(s => s.hpGainedFromConsumingEnergy),
-                  borderColor: '#8e44ad',
-                  backgroundColor: 'rgba(142, 68, 173, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'births',
-                  data: gens.map(s => s.births),
-                  borderColor: '#1abc9c',
-                  backgroundColor: 'rgba(26, 188, 156, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'consumed_energy',
-                  data: gens.map(s => s.consumedEnergy),
-                  borderColor: '#2ecc71',
-                  backgroundColor: 'rgba(46, 204, 113, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'eaten',
-                  data: gens.map(s => s.reasons.eaten),
-                  borderColor: '#e74c3c',
-                  backgroundColor: 'rgba(231, 76, 60, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'out_of_world',
-                  data: gens.map(s => s.reasons.out_of_world),
-                  borderColor: '#9b59b6',
-                  backgroundColor: 'rgba(155, 89, 182, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                },
-                {
-                  label: 'no_hp',
-                  data: gens.map(s => s.reasons.no_hp),
-                  borderColor: '#2ecc71',
-                  backgroundColor: 'rgba(46, 204, 113, 0.2)',
-                  tension: 0.2,
-                  borderWidth: 2,
-                  pointRadius: 2,
-                  fill: false
-                }
-              ]
-            }
-            const options: ChartOptions<'line'> = {
-              responsive: true,
-              maintainAspectRatio: false,
-              ...(graphicsEnabled ? {} : { animation: false }),
-              plugins: {
-                legend: { position: 'bottom' },
-                title: { display: false }
-              },
-              scales: {
-                x: { title: { display: false } },
-                y: { beginAtZero: true }
+          <div className="gen-tab-content">
+            {(() => {
+              const stats = deathStatsPerGeneration[activeGenTab] || {
+                reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
+                turns: 0,
+                highestAge: 0,
+                energyStart: 0,
+                births: 0,
+                consumedEnergy: 0,
+                hpGainedFromEating: 0,
+                hpGainedFromConsumingEnergy: 0
               }
-            }
-            return <Line data={data} options={options}/>
-          })()}
-        </div>
-        <div className="gen-top-bottom">
-          {(() => {
-            const gens = deathStatsPerGeneration
-            if (!gens || gens.length === 0) {
-              return <div className="empty">No data yet</div>
-            }
-            const metrics = [
-              { key: 'turns', label: 'turns', getter: (s: GenerationStats) => s.turns },
-              { key: 'highest_age', label: 'highest_age', getter: (s: GenerationStats) => s.highestAge },
-              { key: 'energy_start', label: 'energy_start', getter: (s: GenerationStats) => s.energyStart },
-              { key: 'births', label: 'births', getter: (s: GenerationStats) => s.births },
-              { key: 'consumed_energy', label: 'consumed_energy', getter: (s: GenerationStats) => s.consumedEnergy },
-              { key: 'hp_gained_eating', label: 'hp_gained_eating', getter: (s: GenerationStats) => s.hpGainedFromEating },
-              { key: 'hp_gained_consuming_energy', label: 'hp_gained_consuming_energy', getter: (s: GenerationStats) => s.hpGainedFromConsumingEnergy },
-              { key: 'eaten', label: 'eaten', getter: (s: GenerationStats) => s.reasons.eaten },
-              { key: 'out_of_world', label: 'out_of_world', getter: (s: GenerationStats) => s.reasons.out_of_world },
-              { key: 'no_hp', label: 'no_hp', getter: (s: GenerationStats) => s.reasons.no_hp }
-            ]
-            const computeTopBottom = (values: number[]) => {
-              const pairs = values.map((v, i) => ({ i, v }))
-              const count = Math.min(5, pairs.length)
-              const top = [...pairs].sort((a, b) => b.v - a.v).slice(0, count)
-              const bottom = [...pairs].sort((a, b) => a.v - b.v).slice(0, count)
-              return { top, bottom }
-            }
-            return (
-              <div>
-                <div className="strongest-orbs-title">Top 5 / Bottom 5 by stat</div>
-                {metrics.map(m => {
-                  const values = gens.map(m.getter)
-                  const { top, bottom } = computeTopBottom(values)
-                  return (
-                    <div key={`metric-${m.key}`} className="metric-block">
-                      <div className="metric-name">{m.label}</div>
-                      <div className="metric-lists">
-                        <div className="metric-list">
-                          <div className="list-title">most</div>
-                          <ul>
-                            {top.map(p => (
-                              <li key={`${m.key}-top-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="metric-list">
-                          <div className="list-title">least</div>
-                          <ul>
-                            {bottom.map(p => (
-                              <li key={`${m.key}-bottom-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
-                            ))}
-                          </ul>
+              return (
+                <ul>
+                  <li>turns: {stats.turns}</li>
+                  <li>highest_age: {stats.highestAge}</li>
+                  <li>energy_start: {stats.energyStart}</li>
+                  <li>births: {stats.births}</li>
+                  <li>consumed_energy: {stats.consumedEnergy}</li>
+                  <li>hp_gained_consuming_energy: {stats.hpGainedFromConsumingEnergy}</li>
+                  <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
+                  <li>eaten: {stats.reasons.eaten}</li>
+                  <li>out_of_world: {stats.reasons.out_of_world}</li>
+                  <li>no_hp: {stats.reasons.no_hp}</li>
+                </ul>
+              )
+            })()}
+            <div className="strongest-orbs-section">
+              <div className="strongest-orbs-title">Strongest Orbs</div>
+              <div className="saved-orbs-grid">
+                {((strongestOrbsPerGeneration[activeGenTab] || []) as Orb[]).length > 0 ? (
+                  strongestOrbsPerGeneration[activeGenTab].map((orb, idx) => {
+                    const color = orb.getColor()
+                    return (
+                      <div
+                        key={`saved-orb-${activeGenTab}-${idx}-${orb.id}`}
+                        className="saved-orb"
+                        title={`Age: ${orb.age}`}
+                        onClick={() => showOrbStory(orb)}
+                      >
+                        <div
+                          className="saved-orb-circle"
+                          style={{ backgroundColor: `rgb(${color.reds}, ${color.greens}, ${color.blues})` }}
+                        />
+                        <div className="saved-orb-id">{orb.name}</div>
+                        <div className="saved-orb-age">age: {orb.age}</div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="saved-orbs-empty">No strongest orbs saved yet.</div>
+                )}
+              </div>
+            </div>
+            {/* Saved Orbs moved to a dedicated bottom panel */}
+          </div>
+          <div className="gen-chart">
+            {(() => {
+              const gens = deathStatsPerGeneration
+              if (!gens || gens.length === 0) {
+                return <div className="empty">No data yet</div>
+              }
+              const labels = gens.map((_s, idx) => `Gen ${idx + 1}`)
+              const data: ChartData<'line'> = {
+                labels,
+                datasets: [
+                  {
+                    label: 'turns',
+                    data: gens.map(s => s.turns),
+                    borderColor: '#4ea1f3',
+                    backgroundColor: 'rgba(78, 161, 243, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'highest_age',
+                    data: gens.map(s => s.highestAge),
+                    borderColor: '#f39c12',
+                    backgroundColor: 'rgba(243, 156, 18, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'energy_start',
+                    data: gens.map(s => s.energyStart),
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'hp_gained_eating',
+                    data: gens.map(s => s.hpGainedFromEating),
+                    borderColor: '#f1c40f',
+                    backgroundColor: 'rgba(241, 196, 15, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'hp_gained_consuming_energy',
+                    data: gens.map(s => s.hpGainedFromConsumingEnergy),
+                    borderColor: '#8e44ad',
+                    backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'births',
+                    data: gens.map(s => s.births),
+                    borderColor: '#1abc9c',
+                    backgroundColor: 'rgba(26, 188, 156, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'consumed_energy',
+                    data: gens.map(s => s.consumedEnergy),
+                    borderColor: '#2ecc71',
+                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'eaten',
+                    data: gens.map(s => s.reasons.eaten),
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'out_of_world',
+                    data: gens.map(s => s.reasons.out_of_world),
+                    borderColor: '#9b59b6',
+                    backgroundColor: 'rgba(155, 89, 182, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  },
+                  {
+                    label: 'no_hp',
+                    data: gens.map(s => s.reasons.no_hp),
+                    borderColor: '#2ecc71',
+                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                    tension: 0.2,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: false
+                  }
+                ]
+              }
+              const options: ChartOptions<'line'> = {
+                responsive: true,
+                maintainAspectRatio: false,
+                ...(graphicsEnabled ? {} : { animation: false }),
+                plugins: {
+                  legend: { position: 'bottom' },
+                  title: { display: false }
+                },
+                scales: {
+                  x: { title: { display: false } },
+                  y: { beginAtZero: true }
+                }
+              }
+              return <Line data={data} options={options}/>
+            })()}
+          </div>
+          <div className="gen-top-bottom">
+            {(() => {
+              const gens = deathStatsPerGeneration
+              if (!gens || gens.length === 0) {
+                return <div className="empty">No data yet</div>
+              }
+              const metrics = [
+                { key: 'turns', label: 'turns', getter: (s: GenerationStats) => s.turns },
+                { key: 'highest_age', label: 'highest_age', getter: (s: GenerationStats) => s.highestAge },
+                { key: 'energy_start', label: 'energy_start', getter: (s: GenerationStats) => s.energyStart },
+                { key: 'births', label: 'births', getter: (s: GenerationStats) => s.births },
+                { key: 'consumed_energy', label: 'consumed_energy', getter: (s: GenerationStats) => s.consumedEnergy },
+                { key: 'hp_gained_eating', label: 'hp_gained_eating', getter: (s: GenerationStats) => s.hpGainedFromEating },
+                { key: 'hp_gained_consuming_energy', label: 'hp_gained_consuming_energy', getter: (s: GenerationStats) => s.hpGainedFromConsumingEnergy },
+                { key: 'eaten', label: 'eaten', getter: (s: GenerationStats) => s.reasons.eaten },
+                { key: 'out_of_world', label: 'out_of_world', getter: (s: GenerationStats) => s.reasons.out_of_world },
+                { key: 'no_hp', label: 'no_hp', getter: (s: GenerationStats) => s.reasons.no_hp }
+              ]
+              const computeTopBottom = (values: number[]) => {
+                const pairs = values.map((v, i) => ({ i, v }))
+                const count = Math.min(5, pairs.length)
+                const top = [...pairs].sort((a, b) => b.v - a.v).slice(0, count)
+                const bottom = [...pairs].sort((a, b) => a.v - b.v).slice(0, count)
+                return { top, bottom }
+              }
+              return (
+                <div>
+                  <div className="strongest-orbs-title">Top 5 / Bottom 5 by stat</div>
+                  {metrics.map(m => {
+                    const values = gens.map(m.getter)
+                    const { top, bottom } = computeTopBottom(values)
+                    return (
+                      <div key={`metric-${m.key}`} className="metric-block">
+                        <div className="metric-name">{m.label}</div>
+                        <div className="metric-lists">
+                          <div className="metric-list">
+                            <div className="list-title">most</div>
+                            <ul>
+                              {top.map(p => (
+                                <li key={`${m.key}-top-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="metric-list">
+                            <div className="list-title">least</div>
+                            <ul>
+                              {bottom.map(p => (
+                                <li key={`${m.key}-bottom-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                              ))}
+                            </ul>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
         </div>
       </div>
 
