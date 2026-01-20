@@ -35,6 +35,10 @@ const hpGainByEnergyConsumption = settings.hpGainByEnergyConsumption
 const energyCreatedOnDeath = settings.energyCreatedOnDeath
 const scanRadius = settings.scanRadius
 
+const bitePercentOfAttackerHp = 0.15
+const biteMineralDropFraction = 0.4
+const biteMineralDropMin = 1
+
 const idLength = settings.idLength
 const initialTurnDuration = settings.initialTurnDuration
 const birthTaxPercent = settings.birthTaxPercent
@@ -52,6 +56,8 @@ let graphicsEffectsEnabled = settings.graphicEffects
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
+
+const kinshipMaxDepth = 24
 
 interface Genes {
   // 1. HP & Sensitivities
@@ -76,6 +82,10 @@ interface Genes {
   retaliation_fear: number
   kill_greed: number
   territoriality: number
+
+  // 3.1 Kinship
+  trust_in_relatives: number
+  aggression_towards_relatives: number
 
   // 4. Reproduction
   min_hp_to_divide: number
@@ -118,6 +128,9 @@ const DEFAULT_GENES: Genes = {
   kill_greed: 0.5,
   territoriality: 0.3,
 
+  trust_in_relatives: 0.6,
+  aggression_towards_relatives: 0.25,
+
   min_hp_to_divide: 0.5,
   division_risk_aversion: 0.3,
   offspring_investment: 0.5,
@@ -148,6 +161,8 @@ const AGGRESSIVE_INDIVIDUAL_GENES: Genes = {
   retaliation_fear: 0.6,
   kill_greed: 0.8,
   territoriality: 0.6,
+  trust_in_relatives: 0.35,
+  aggression_towards_relatives: 0.6,
   crowd_preference: 0.05,
   decision_noise: 0.25,
   impulsiveness: 0.05,
@@ -171,6 +186,8 @@ const HERD_HERBIVORE_GENES: Genes = {
   retaliation_fear: 1.2,
   kill_greed: 0.05,
   territoriality: 0.1,
+  trust_in_relatives: 0.85,
+  aggression_towards_relatives: 0.05,
   division_risk_aversion: 0.25,
   offspring_investment: 0.6,
   reproduction_urgency: 0.85,
@@ -196,6 +213,8 @@ const ADVENTUROUS_EXPLORER_GENES: Genes = {
   retaliation_fear: 0.75,
   kill_greed: 0.3,
   territoriality: 0.2,
+  trust_in_relatives: 0.5,
+  aggression_towards_relatives: 0.2,
   offspring_investment: 0.45,
   reproduction_urgency: 0.6,
   diagonal_awareness: 0.8,
@@ -216,7 +235,7 @@ const SPAWN_ARCHETYPES: Genes[] = [
 let spawnArchetypeCursor = 0
 
 // Action types for the new engine
-type ActionType = 'WAIT' | 'MOVE' | 'CONSUME' | 'EAT' | 'DIVIDE'
+type ActionType = 'WAIT' | 'MOVE' | 'CONSUME' | 'BITE' | 'DIVIDE'
 
 interface ActionDecision {
   type: ActionType
@@ -262,6 +281,10 @@ class Orb {
   hp: number
 
   genes: Genes
+
+  parentId: string | null
+  ancestorIds: string[]
+  private lineageDistancesCache: Map<string, number> | null = null
   
   // State for inertia
   lastActionUtility: number = 0
@@ -276,15 +299,58 @@ class Orb {
   glow: string = ''
   reproductionCooldownRemaining: number = 0
 
-  constructor(x: number, y: number, hp: number, genes: Genes, parentName?: string) {
+  constructor(x: number, y: number, hp: number, genes: Genes, parent?: Orb | null) {
     this.x = x
     this.y = y
     this.hp = hp
     this.genes = genes
     this.id = getRandomId(idLength)
     // Simple naming based on ID since DNA is gone
-    this.name = `Orb ${this.id.substring(0, 4)}` + (parentName ? ` of ${parentName}` : '')
+    this.name = `Orb ${this.id.substring(0, 4)}` + (parent ? ` of ${parent.name}` : '')
+    this.parentId = parent?.id ?? null
+    this.ancestorIds = parent ? [ parent.id, ...parent.ancestorIds ].slice(0, kinshipMaxDepth) : []
     this.addToLog(`I was born with ❤️${hp}hp`)
+  }
+
+  private getLineageDistances(): Map<string, number> {
+    if (this.lineageDistancesCache) {
+      return this.lineageDistancesCache
+    }
+    const distances = new Map<string, number>()
+    distances.set(this.id, 0)
+    for (let i = 0; i < this.ancestorIds.length; i++) {
+      distances.set(this.ancestorIds[i], i + 1)
+    }
+    this.lineageDistancesCache = distances
+    return distances
+  }
+
+  kinshipTo(other: Orb): number {
+    if (this.id === other.id) {
+      return 1
+    }
+    const a = this.getLineageDistances()
+    const b = other.getLineageDistances()
+    const [small, big] = a.size <= b.size ? [a, b] : [b, a]
+
+    let bestSum = Infinity
+    for (const [ancestorId, d1] of small) {
+      const d2 = big.get(ancestorId)
+      if (d2 === undefined) continue
+      const sum = d1 + d2
+      if (sum < bestSum) {
+        bestSum = sum
+      }
+    }
+
+    if (!Number.isFinite(bestSum)) {
+      return 0
+    }
+    if (bestSum <= 0) {
+      return 1
+    }
+    const exponent = Math.max(0, bestSum - 1)
+    return Math.pow(0.5, exponent)
   }
 
   triggerGlow(className: 'glow-white' | 'glow-red' | 'glow-green') {
@@ -385,9 +451,12 @@ class Orb {
           occupied = occupants.length > 0
           for (const other of occupants) {
             const enemyHpNorm = clamp(other.hp / genes.hp_healthy_norm, 0, 1)
+            const kinship = this.kinshipTo(other)
 
             const enemyAdvantage = enemyHpNorm / Math.max(hpNorm, 0.001)
-            threatSum += enemyAdvantage * kernel * diagModifier
+            const trustedThreatReduction = clamp(kinship * genes.trust_in_relatives, 0, 1)
+            const threatModifier = clamp(1 - trustedThreatReduction, 0, 1)
+            threatSum += enemyAdvantage * kernel * diagModifier * threatModifier
 
             const ourAdvantage = hpNorm / Math.max(enemyHpNorm, 0.001)
             const attackFeasibility = ourAdvantage / genes.attack_margin
@@ -395,7 +464,9 @@ class Orb {
 
             const fRetaliation = clamp(genes.retaliation_fear * enemyAdvantage * (1 - riskDrive), 0, 1)
             const preySource = attackSignal * genes.cannibalism_factor * genes.territoriality * (1 - fRetaliation)
-            preySum += preySource * kernel * diagModifier
+            const relativeAggression = clamp(genes.aggression_towards_relatives, 0, 1)
+            const preyModifier = clamp((1 - kinship) + kinship * relativeAggression, 0, 1)
+            preySum += preySource * kernel * diagModifier * preyModifier
           }
         }
 
@@ -785,42 +856,117 @@ class Orb {
           })
         }
       } else if (cell.prey > 0) {
-        const eatPreyDrive = cell.prey * attackDrive
-        const eatGreed = genes.kill_greed * cell.prey
-        const eatFear = W_fear * cell.threat * motivations.fearEffective
-        const eatUtility = eatPreyDrive + eatGreed - eatFear
-        const eatDecision: ActionDecision = {
-          type: 'EAT',
+        const bitePreyDrive = cell.prey * attackDrive
+        const biteGreed = genes.kill_greed * cell.prey
+        const biteFear = W_fear * cell.threat * motivations.fearEffective
+        const biteUtility = bitePreyDrive + biteGreed - biteFear
+        const biteDecision: ActionDecision = {
+          type: 'BITE',
           targetX: cell.x,
           targetY: cell.y,
-          utility: eatUtility,
-          description: `eat at ${cell.x},${cell.y}`
+          utility: biteUtility,
+          description: `bite at ${cell.x},${cell.y}`
         }
-        decisions.push(eatDecision)
+        decisions.push(biteDecision)
         if (debug) {
+          const interaction = (() => {
+            const occupants = getCellOrbs(cell.x, cell.y, this.id)
+            const dist = Math.sqrt(cell.dx * cell.dx + cell.dy * cell.dy)
+            const kernel = Math.pow(genes.distance_decay, dist)
+            const isDiagonal = cell.dx !== 0 && cell.dy !== 0
+            const diagModifier = isDiagonal ? genes.diagonal_awareness : 1.0
+
+            const lines: string[] = []
+            if (occupants.length === 0) {
+              lines.push(`I expected an orb here, but found none when checking the cell directly.`)
+              return {
+                lines,
+                threatSum: 0,
+                preySum: 0,
+                threat: 0,
+                prey: 0,
+                kernel,
+                diagModifier
+              }
+            }
+
+            let threatSum = 0
+            let preySum = 0
+
+            lines.push(`This cell has ${occupants.length} orb(s): ${occupants.map(o => o.name).join(', ')}.`)
+            lines.push(`I evaluate kinship (shared ancestors) and adjust threat and prey signals.`)
+            lines.push(
+              `My kinship genes: trust_in_relatives=${genes.trust_in_relatives.toFixed(3)}, aggression_towards_relatives=${genes.aggression_towards_relatives.toFixed(3)}.`
+            )
+            lines.push(`Distance decay kernel here is distance_decay^dist = ${genes.distance_decay.toFixed(3)}^${dist.toFixed(3)} = ${kernel.toFixed(3)}.`)
+            lines.push(`Diagonal modifier is ${diagModifier.toFixed(3)}.`)
+
+            for (const other of occupants) {
+              const enemyHpNorm = clamp(other.hp / genes.hp_healthy_norm, 0, 1)
+              const enemyAdvantage = enemyHpNorm / Math.max(motivations.hpNorm, 0.001)
+              const kinship = this.kinshipTo(other)
+              const trustedThreatReduction = clamp(kinship * genes.trust_in_relatives, 0, 1)
+              const threatModifier = clamp(1 - trustedThreatReduction, 0, 1)
+              const threatContribution = enemyAdvantage * kernel * diagModifier * threatModifier
+              threatSum += threatContribution
+
+              const ourAdvantage = motivations.hpNorm / Math.max(enemyHpNorm, 0.001)
+              const attackFeasibility = ourAdvantage / genes.attack_margin
+              const attackSignal = clamp(attackFeasibility - 1, 0, 1)
+
+              const fRetaliation = clamp(genes.retaliation_fear * enemyAdvantage * (1 - motivations.riskDrive), 0, 1)
+              const preyBase = attackSignal * genes.cannibalism_factor * genes.territoriality * (1 - fRetaliation)
+              const preyModifier = clamp((1 - kinship) + kinship * clamp(genes.aggression_towards_relatives, 0, 1), 0, 1)
+              const preyContribution = preyBase * kernel * diagModifier * preyModifier
+              preySum += preyContribution
+
+              lines.push(
+                `Kinship to ${other.name} is ${kinship.toFixed(3)}. threatModifier=(1-kinship*trust)=(1-${kinship.toFixed(3)}*${genes.trust_in_relatives.toFixed(3)})=${threatModifier.toFixed(3)}.`
+              )
+              lines.push(
+                `Threat contribution: enemyAdvantage*kernel*diag*threatModifier = ${enemyAdvantage.toFixed(3)}*${kernel.toFixed(3)}*${diagModifier.toFixed(3)}*${threatModifier.toFixed(3)} = ${threatContribution.toFixed(3)}.`
+              )
+              lines.push(
+                `Prey modifier: (1-kinship)+kinship*aggrRel = (1-${kinship.toFixed(3)})+${kinship.toFixed(3)}*${genes.aggression_towards_relatives.toFixed(3)} = ${preyModifier.toFixed(3)}.`
+              )
+              lines.push(
+                `Prey contribution: preyBase*kernel*diag*preyModifier = ${preyBase.toFixed(3)}*${kernel.toFixed(3)}*${diagModifier.toFixed(3)}*${preyModifier.toFixed(3)} = ${preyContribution.toFixed(3)}.`
+              )
+            }
+
+            const threat = clamp(threatSum, 0, 1)
+            const prey = clamp(preySum, 0, 1)
+            lines.push(`After summing all occupants, threatSum=${threatSum.toFixed(3)} -> threat(clamped)=${threat.toFixed(3)}.`)
+            lines.push(`After summing all occupants, preySum=${preySum.toFixed(3)} -> prey(clamped)=${prey.toFixed(3)}.`)
+
+            return { lines, threatSum, preySum, threat, prey, kernel, diagModifier }
+          })()
+
           debugRows.push({
-            type: eatDecision.type,
+            type: biteDecision.type,
             whyLines: [
-              `I consider EAT at ${cell.x},${cell.y} (dx=${cell.dx}, dy=${cell.dy}).`,
+              `I consider BITE at ${cell.x},${cell.y} (dx=${cell.dx}, dy=${cell.dy}).`,
               `Is there prey there? yes (prey score=${cell.prey.toFixed(3)}).`,
               `Threat there is ${cell.threat.toFixed(3)}.`,
               ``,
+              ...interaction.lines,
+              ``,
               `I combine hunger and aggression into an "attackDrive" so I know how much I want to bite.`,
               `attackDrive=${attackDrive.toFixed(3)} (mix of hunger and aggression weights/moods).`,
-              `So the main eating drive is: prey * attackDrive = ${cell.prey.toFixed(3)} * ${attackDrive.toFixed(3)} = ${eatPreyDrive.toFixed(3)}.`,
+              `So the main bite drive is: prey * attackDrive = ${cell.prey.toFixed(3)} * ${attackDrive.toFixed(3)} = ${bitePreyDrive.toFixed(3)}.`,
               ``,
               `I also have a "kill greed" gene that makes me want to attack even beyond pure need.`,
-              `kill_greed=${genes.kill_greed.toFixed(3)} so greed bonus = kill_greed * prey = ${genes.kill_greed.toFixed(3)} * ${cell.prey.toFixed(3)} = ${eatGreed.toFixed(3)}.`,
+              `kill_greed=${genes.kill_greed.toFixed(3)} so greed bonus = kill_greed * prey = ${genes.kill_greed.toFixed(3)} * ${cell.prey.toFixed(3)} = ${biteGreed.toFixed(3)}.`,
               ``,
-              `But eating is risky if the area is dangerous.`,
-              `Fear cost = W_fear * threat * effectiveFear = ${W_fear.toFixed(3)} * ${cell.threat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${eatFear.toFixed(3)}.`,
+              `But biting is risky if the area is dangerous.`,
+              `Fear cost = W_fear * threat * effectiveFear = ${W_fear.toFixed(3)} * ${cell.threat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${biteFear.toFixed(3)}.`,
               ``,
-              `Base score for EAT = drive + greed - fearCost = ${eatPreyDrive.toFixed(3)} + ${eatGreed.toFixed(3)} - ${eatFear.toFixed(3)} = ${eatUtility.toFixed(3)}.`
+              `Base score for BITE = drive + greed - fearCost = ${bitePreyDrive.toFixed(3)} + ${biteGreed.toFixed(3)} - ${biteFear.toFixed(3)} = ${biteUtility.toFixed(3)}.`
             ],
             target: `${cell.x},${cell.y} (dx=${cell.dx},dy=${cell.dy})`,
             dx: cell.dx,
             dy: cell.dy,
-            base: eatUtility,
+            base: biteUtility,
             inertia: 0,
             noise: 0,
             final: 0
@@ -879,7 +1025,9 @@ class Orb {
           W_fear: Number(W_fear.toFixed(3)),
           inertia_bias: Number(genes.inertia_bias.toFixed(3)),
           decision_noise: Number(genes.decision_noise.toFixed(3)),
-          impulsiveness: Number(genes.impulsiveness.toFixed(3))
+          impulsiveness: Number(genes.impulsiveness.toFixed(3)),
+          trust_in_relatives: Number(genes.trust_in_relatives.toFixed(3)),
+          aggression_towards_relatives: Number(genes.aggression_towards_relatives.toFixed(3))
         })
         console.table({
           currentEnergy: Number(currentEnergy.toFixed(3)),
@@ -961,7 +1109,9 @@ class Orb {
       console.table({
         inertia_bias: Number(genes.inertia_bias.toFixed(3)),
         decision_noise: Number(genes.decision_noise.toFixed(3)),
-        impulsiveness: Number(genes.impulsiveness.toFixed(3))
+        impulsiveness: Number(genes.impulsiveness.toFixed(3)),
+        trust_in_relatives: Number(genes.trust_in_relatives.toFixed(3)),
+        aggression_towards_relatives: Number(genes.aggression_towards_relatives.toFixed(3))
       })
       console.table({
         currentEnergy: Number(currentEnergy.toFixed(3)),
@@ -1020,7 +1170,7 @@ class Orb {
            this.move(d.targetX, d.targetY)
         }
         break
-      case 'EAT':
+      case 'BITE':
         if (d.targetX !== undefined && d.targetY !== undefined) {
            this.bite(d.targetX, d.targetY)
         }
@@ -1066,28 +1216,40 @@ class Orb {
       return
     }
 
-    this.eat(cellOrbs[0])
+    this.bitePrey(cellOrbs[0])
   }
 
-  eat(prey: Orb) {
-    // Logic for canEat is already checked in decision usually, but double check
-    if (!canEatOrb(this, prey)) {
-      this.addToLog(`I failed to eat ${prey.id} (target is bigger)`)
-      return
+  bitePrey(prey: Orb) {
+    const intendedBite = Math.min(2, Math.round(this.hp * bitePercentOfAttackerHp))
+    const biteAmount = Math.min(intendedBite, prey.hp)
+
+    const mineralDropRaw = Math.floor(biteAmount * biteMineralDropFraction)
+    const mineralDrop = Math.min(biteAmount, Math.max(biteMineralDropMin, mineralDropRaw))
+    const hpTransfer = biteAmount - mineralDrop
+
+    const preyX = prey.x
+    const preyY = prey.y
+    const dropX = preyX
+    const dropY = withinWorldBoundaries(preyX, preyY + 1) ? preyY + 1 : preyY
+
+    const kills = prey.hp - biteAmount <= 0
+    prey.addToLog(`I was bitten by ${this.id} for ${biteAmount}hp`)
+    if (kills) {
+      prey.deathReason = deathReasons.EATEN
+    }
+    prey.loseHp(biteAmount)
+
+    if (hpTransfer > 0) {
+      this.gainHp(hpTransfer)
+      registerHpGainedFromEating(hpTransfer)
     }
 
-    // Gain full health from prey
-    const hpGain = prey.hp
-    this.hp += hpGain
-    registerHpGainedFromEating(hpGain)
-    this.addToLog(`I ate Orb ${prey.id} and got ${hpGain}hp`)
+    if (mineralDrop > 0) {
+      addCellEnergy(dropY, dropX, mineralDrop)
+    }
 
-    // Eating prevents aging for this turn
+    this.addToLog(`I bit Orb ${prey.id}: -${biteAmount}hp, +${hpTransfer}hp, dropped ${mineralDrop}`)
     this.preventAgingThisTurn = true
-
-    prey.addToLog(`I was eaten by ${this.id}`)
-    prey.deathReason = deathReasons.EATEN
-    prey.loseHp(prey.hp)
   }
 
   attemptDivide() {
@@ -1117,7 +1279,7 @@ class Orb {
          return
       }
 
-      const child = spawnOrb(x, y, childHp, this.genes, this.name)
+      const child = spawnOrb(x, y, childHp, this.genes, this)
 
       this.loseHp(totalCost)
       this.reproductionCooldownRemaining = Math.max(0, Math.round(this.genes.reproduction_cooldown))
@@ -1224,6 +1386,8 @@ function generateWorld(worldIteration: number = 0) {
 
   generateMap()
 
+  console.log(worldIteration)
+
   if (worldIteration > 1) {
     // последующие геренации
     // Build strongest list from last generation's dead orbs, ensuring unique IDs
@@ -1250,7 +1414,7 @@ function generateWorld(worldIteration: number = 0) {
         const [ x, y ] = getRandomEmptyCell()
         const hp = getRandomMinMax(initialOrbHP[0], initialOrbHP[1])
         // First orbs of a new generation should have only one name (DNA-based)
-        spawnOrb(x, y, hp, strongestOrb.genes)
+        spawnOrb(x, y, hp, strongestOrb.genes, strongestOrb)
       }
     }
 
@@ -1258,6 +1422,7 @@ function generateWorld(worldIteration: number = 0) {
     if (resetEnergyOnNewGenerations) {
       // Reset energy on each subsequent generation
       reseedRandomEnergy()
+      console.log('AAAA')
     } else {
       // Keep existing energy grid; no redistribution
       if (!Array.isArray(worldEnergy) || worldEnergy.length === 0) {
@@ -1267,8 +1432,11 @@ function generateWorld(worldIteration: number = 0) {
         }
         distributeEnergyOnMap(initialEnergyOnMap)
       }
+      console.log('BBB')
     }
   } else {
+    console.log('CCC')
+
     // первая генерация
     orbs = []
     spawnArchetypeCursor = 0
@@ -1319,13 +1487,13 @@ function spawnOrb(
   y: number,
   hp: number,
   ancestorGenes?: Genes,
-  parentName?: string
+  parent?: Orb | null
 ): Orb {
   const genes = ancestorGenes
     ? getMutatedGenes(ancestorGenes)
     : getRandomGenes()
 
-  const orb = new Orb(x, y, hp, genes, parentName)
+  const orb = new Orb(x, y, hp, genes, parent)
   orbs.push(orb)
 
   return orb
@@ -1342,10 +1510,6 @@ function makeTurn(_turnNum: number) {
 }
 
 // ----- HELPERS -----
-
-function canEatOrb(consumer: Orb, prey: Orb): boolean {
-  return prey.hp < consumer.hp / 2
-}
 
 function computeBirthCost(parentHp: number, genes: Genes): {
   childHp: number
@@ -1781,7 +1945,7 @@ function App() {
         (e.code === 'Space' ||
           e.code === 'BracketRight' ||
           e.code === 'KeyG' ||
-          e.code === 'KeyR' ||
+          e.code === 'KeyM' ||
           e.code === 'KeyN' ||
           e.code === 'KeyS')
       ) {
@@ -1824,7 +1988,7 @@ function App() {
         return
       }
 
-      if (e.code === 'KeyR') {
+      if (e.code === 'KeyM') {
         e.preventDefault()
         setPaused(true)
         setSelectedOrb(null)
@@ -1838,7 +2002,7 @@ function App() {
         e.preventDefault()
         setPaused(true)
         setSelectedOrb(null)
-        generateWorld()
+        generateWorld(0)
         setTurn(0)
         return
       }

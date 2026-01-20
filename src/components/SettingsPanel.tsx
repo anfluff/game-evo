@@ -20,13 +20,13 @@ export type Settings = {
 
 export const defaultSettings: Settings = {
   worldSize: [15, 25],
-  initialOrbHP: [20, 30],
+  initialOrbHP: [10, 20],
   initialOrbsCount: 10,
   newGenStrongestCount: 10,
   newGenOffspringPerParent: 3,
   birthTaxPercent: 20,
-  initialEnergyOnMap: 300,
-  resetEnergyOnNewGenerations: false,
+  initialEnergyOnMap: 200,
+  resetEnergyOnNewGenerations: true,
   graphicEffects: true,
   hpGainByEnergyConsumption: 3,
   energyCreatedOnDeath: 2,
