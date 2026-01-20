@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import './styles/App.css'
 import { Line } from 'react-chartjs-2'
 import {
@@ -14,24 +14,8 @@ import {
   type ChartData
 } from 'chart.js'
 import { SettingsPanel, loadSettings, saveSettings, type Settings } from './components/SettingsPanel'
-import { SavedOrbs } from './components/SavedOrbs'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
-
-/*
----- Заметки -----
-
-теперь зрение работает здорово и появилсь реакции
-но теперь кажется сомнительным само днк, как будто не должно быть в нем команд ничем не обусловленных
-что думаю сделать - добавить больше огранов чувств.
-и днк будет борьбой разных органов чувств за "процессорное время".
-возможно даже "общее рабочее пространство" и орган принятия решения из предлагаемых разными системами
-
-- орбы должны уметь смотреть на себя - сколько хп
-- определять родство с соседями - похожи ли днк
-- сами мочь определять порог деления
-
- */
 
 // ---- SETUP -----
 
@@ -47,16 +31,13 @@ const newGenOffspringPerParent = settings.newGenOffspringPerParent
 const initialEnergyOnMap = settings.initialEnergyOnMap
 const resetEnergyOnNewGenerations = settings.resetEnergyOnNewGenerations // true - сбрасывать энергию на новую генерацию, false - сохранять
 
-const splitHPThreshold = settings.splitHPThreshold // ??
 const hpGainByEnergyConsumption = settings.hpGainByEnergyConsumption
 const energyCreatedOnDeath = settings.energyCreatedOnDeath
-
-const dnaLength = settings.dnaLength
-const reactionsLength = settings.reactionsLength // Number of signal categories used by reactions (columns)
-const reactionDirectionsLength = settings.reactionDirectionsLength // Number of directions that a signal can come from (rows)
+const scanRadius = settings.scanRadius
 
 const idLength = settings.idLength
 const initialTurnDuration = settings.initialTurnDuration
+const birthTaxPercent = settings.birthTaxPercent
 
 const cellSize = 48
 const cellGap = 4
@@ -67,113 +48,209 @@ let graphicsEffectsEnabled = settings.graphicEffects
 
 // ---- CLASSES -----
 
-const orbCommands = {
-  WATCH_LEFT: 1,
-  WATCH_RIGHT: 2,
-  WATCH_TOP: 3,
-  WATCH_BOTTOM: 4,
-
-  STAY_IDLE: 5,
-  MOVE_RIGHT: 6,
-  MOVE_LEFT: 7,
-  MOVE_UP: 8,
-  MOVE_DOWN: 9,
-
-  BITE_LEFT: 10,
-  BITE_RIGHT: 11,
-  BITE_UP: 12,
-  BITE_DOWN: 13,
-
-  CONSUME_ENERGY: 14,
-
-  GIVE_BIRTH_LEFT: 15,
-  GIVE_BIRTH_RIGHT: 16,
-  GIVE_BIRTH_UP: 17,
-  GIVE_BIRTH_DOWN: 18
+// Helper for clamping values
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }
 
-const orbCommandsInfo: Record<number, { icon: string; label: string }> = {
-  [orbCommands.WATCH_LEFT]: {
-    icon: '👁️⬅️',
-    label: 'Watch Left'
-  },
-  [orbCommands.WATCH_RIGHT]: {
-    icon: '👁️️➡️',
-    label: 'Watch Right'
-  },
-  [orbCommands.WATCH_TOP]: {
-    icon: '👁️️⬆️',
-    label: 'Watch Top'
-  },
-  [orbCommands.WATCH_BOTTOM]: {
-    icon: '👁️️⬇️',
-    label: 'Watch Bottom'
-  },
-  [orbCommands.STAY_IDLE]: {
-    icon: '💤',
-    label: 'Stay Idle'
-  },
-  [orbCommands.MOVE_RIGHT]: {
-    icon: '🦶➡️',
-    label: 'Move Right'
-  },
-  [orbCommands.MOVE_LEFT]: {
-    icon: '🦶⬅️',
-    label: 'Move Left'
-  },
-  [orbCommands.MOVE_UP]: {
-    icon: '🦶⬆️',
-    label: 'Move Up'
-  },
-  [orbCommands.MOVE_DOWN]: {
-    icon: '🦶⬇️',
-    label: 'Move Down'
-  },
-  [orbCommands.BITE_LEFT]: {
-    icon: '💥⬅️',
-    label: 'Bite Left'
-  },
-  [orbCommands.BITE_RIGHT]: {
-    icon: '💥➡️',
-    label: 'Bite Right'
-  },
-  [orbCommands.BITE_UP]: {
-    icon: '💥⬆️',
-    label: 'Bite Up'
-  },
-  [orbCommands.BITE_DOWN]: {
-    icon: '💥⬇️',
-    label: 'Bite Down'
-  },
-  [orbCommands.CONSUME_ENERGY]: {
-    icon: '⚡️',
-    label: 'Consume Energy'
-  },
-  [orbCommands.GIVE_BIRTH_LEFT]: {
-    icon: '👶⬅️',
-    label: 'Give Birth Left'
-  },
-  [orbCommands.GIVE_BIRTH_RIGHT]: {
-    icon: '👶➡️',
-    label: 'Give Birth Right'
-  },
-  [orbCommands.GIVE_BIRTH_UP]: {
-    icon: '👶⬆️',
-    label: 'Give Birth Up'
-  },
-  [orbCommands.GIVE_BIRTH_DOWN]: {
-    icon: '👶⬇️',
-    label: 'Give Birth Down'
-  }
+interface Genes {
+  // 1. HP & Sensitivities
+  fear_hp_sensitivity: number
+  hunger_hp_sensitivity: number
+  aggression_hp_sensitivity: number
+  exploration_hp_sensitivity: number
+  risk_tolerance: number
+  recovery_optimism: number
+  hp_healthy_norm: number
+
+  // 2. Weights
+  fear_weight: number
+  hunger_weight: number
+  aggression_weight: number
+  reproduction_weight: number
+  exploration_weight: number
+
+  // 3. Attack / Cannibalism
+  cannibalism_factor: number
+  attack_margin: number
+  retaliation_fear: number
+  kill_greed: number
+  territoriality: number
+
+  // 4. Reproduction
+  min_hp_to_divide: number
+  division_risk_aversion: number
+  offspring_investment: number
+  reproduction_urgency: number
+  reproduction_cooldown: number
+
+  // 5. Spatial / Environment
+  max_energy_norm: number
+  diagonal_awareness: number
+  distance_decay: number
+  crowd_preference: number
+  inertia_bias: number
+
+  // 6. Stochastic / Evo
+  decision_noise: number
+  impulsiveness: number
+  mutation_resilience: number
 }
 
-// Direction indices for reaction matrix rows
-const reactionDirections = {
-  LEFT: 0,
-  RIGHT: 1,
-  TOP: 2,
-  BOTTOM: 3
-} as const
+const DEFAULT_GENES: Genes = {
+  fear_hp_sensitivity: 1.2,
+  hunger_hp_sensitivity: 1.0,
+  aggression_hp_sensitivity: 0.35,
+  exploration_hp_sensitivity: 0.3,
+  risk_tolerance: 0.3,
+  recovery_optimism: 0.3,
+  hp_healthy_norm: 15.0,
+
+  fear_weight: 1.3,
+  hunger_weight: 1.1,
+  aggression_weight: 0.9,
+  reproduction_weight: 0.6,
+  exploration_weight: 0.4,
+
+  cannibalism_factor: 0.8,
+  attack_margin: 1.2,
+  retaliation_fear: 1.0,
+  kill_greed: 0.5,
+  territoriality: 0.3,
+
+  min_hp_to_divide: 0.5,
+  division_risk_aversion: 0.3,
+  offspring_investment: 0.5,
+  reproduction_urgency: 0.7,
+  reproduction_cooldown: 3,
+
+  max_energy_norm: 5.0,
+  diagonal_awareness: 0.5,
+  distance_decay: 0.7,
+  crowd_preference: 0.2,
+  inertia_bias: 0.8,
+
+  decision_noise: 0.2,
+  impulsiveness: 0.03,
+  mutation_resilience: 0.4
+}
+
+const AGGRESSIVE_INDIVIDUAL_GENES: Genes = {
+  ...DEFAULT_GENES,
+  aggression_hp_sensitivity: 0.6,
+  risk_tolerance: 0.55,
+  fear_weight: 1.0,
+  aggression_weight: 1.3,
+  reproduction_weight: 0.45,
+  exploration_weight: 0.35,
+  cannibalism_factor: 1.0,
+  attack_margin: 1.0,
+  retaliation_fear: 0.6,
+  kill_greed: 0.8,
+  territoriality: 0.6,
+  crowd_preference: 0.05,
+  decision_noise: 0.25,
+  impulsiveness: 0.05,
+  offspring_investment: 0.45
+}
+
+const HERD_HERBIVORE_GENES: Genes = {
+  ...DEFAULT_GENES,
+  fear_hp_sensitivity: 1.4,
+  aggression_hp_sensitivity: 0.2,
+  exploration_hp_sensitivity: 0.2,
+  risk_tolerance: 0.15,
+  recovery_optimism: 0.4,
+  fear_weight: 1.6,
+  hunger_weight: 1.2,
+  aggression_weight: 0.4,
+  reproduction_weight: 0.9,
+  exploration_weight: 0.25,
+  cannibalism_factor: 0.1,
+  attack_margin: 1.4,
+  retaliation_fear: 1.2,
+  kill_greed: 0.05,
+  territoriality: 0.1,
+  division_risk_aversion: 0.25,
+  offspring_investment: 0.6,
+  reproduction_urgency: 0.85,
+  crowd_preference: 0.85,
+  inertia_bias: 0.9,
+  decision_noise: 0.15,
+  impulsiveness: 0.02
+}
+
+const ADVENTUROUS_EXPLORER_GENES: Genes = {
+  ...DEFAULT_GENES,
+  fear_hp_sensitivity: 0.9,
+  aggression_hp_sensitivity: 0.3,
+  exploration_hp_sensitivity: 0.65,
+  risk_tolerance: 0.65,
+  fear_weight: 0.9,
+  hunger_weight: 1.0,
+  aggression_weight: 0.75,
+  reproduction_weight: 0.4,
+  exploration_weight: 1.0,
+  cannibalism_factor: 0.4,
+  attack_margin: 1.15,
+  retaliation_fear: 0.75,
+  kill_greed: 0.3,
+  territoriality: 0.2,
+  offspring_investment: 0.45,
+  reproduction_urgency: 0.6,
+  diagonal_awareness: 0.8,
+  distance_decay: 0.9,
+  crowd_preference: 0.1,
+  inertia_bias: 0.5,
+  decision_noise: 0.35,
+  impulsiveness: 0.08
+}
+
+const SPAWN_ARCHETYPES: Genes[] = [
+  DEFAULT_GENES,
+  AGGRESSIVE_INDIVIDUAL_GENES,
+  HERD_HERBIVORE_GENES,
+  ADVENTUROUS_EXPLORER_GENES
+]
+
+let spawnArchetypeCursor = 0
+
+// Action types for the new engine
+type ActionType = 'WAIT' | 'MOVE' | 'CONSUME' | 'EAT' | 'DIVIDE'
+
+interface ActionDecision {
+  type: ActionType
+  targetX?: number
+  targetY?: number
+  utility: number
+  description: string
+}
+
+type OrbMotivations = {
+  hpNorm: number
+  riskDrive: number
+  hunger: number
+  fear: number
+  fearEffective: number
+  aggression: number
+  reproduction: number
+  exploration: number
+  maxThreat: number
+  maxPrey: number
+}
+
+type PerceivedCell = {
+  dx: number
+  dy: number
+  x: number
+  y: number
+  inBounds: boolean
+  energy: number
+  threat: number
+  prey: number
+  occupied: boolean
+  localDensity: number
+}
 
 class Orb {
   id: string
@@ -184,23 +261,29 @@ class Orb {
   y: number
   hp: number
 
-  dna: number[]
-  dnaPointer: number = 0
-  reactions: number[][] // matrix [direction][signal] - orb reactions on signals from different directions
+  genes: Genes
+  
+  // State for inertia
+  lastActionUtility: number = 0
+  lastActionType: ActionType | null = null
+  lastMotivations: OrbMotivations | null = null
+  lastPerception: PerceivedCell[] = []
+  lastScanRadius: number = 0
 
   log: string[][] = []
   deathReason: DeathReason | null = null
   preventAgingThisTurn: boolean = false
   glow: string = ''
+  reproductionCooldownRemaining: number = 0
 
-  constructor(x: number, y: number, hp: number, dna: number[], reactions: number[][], parentName?: string) {
+  constructor(x: number, y: number, hp: number, genes: Genes, parentName?: string) {
     this.x = x
     this.y = y
     this.hp = hp
-    this.dna = dna
-    this.reactions = reactions
+    this.genes = genes
     this.id = getRandomId(idLength)
-    this.name = dnaToName(dna) + (parentName ? ` child of ${parentName}` : '')
+    // Simple naming based on ID since DNA is gone
+    this.name = `Orb ${this.id.substring(0, 4)}` + (parentName ? ` of ${parentName}` : '')
     this.addToLog(`I was born with ❤️${hp}hp`)
   }
 
@@ -232,79 +315,724 @@ class Orb {
     // Start a new log block for this turn
     this.log.push([])
 
-    this.executeCommand(this.dna[this.dnaPointer])
+    const decision = this.decideAction()
+    this.executeDecision(decision)
+
     // Apply unified aging once per act if not prevented by action
     if (!this.preventAgingThisTurn) {
       this.addToLog(`> I aged and lost 1 hp`)
       this.loseHp(1)
     }
-    this.moveDnaPointer(1)
+    if (this.reproductionCooldownRemaining > 0) {
+      this.reproductionCooldownRemaining = Math.max(0, this.reproductionCooldownRemaining - 1)
+    }
     this.age += 1
   }
 
-  executeCommand(id: number) {
-    this.addToLog(`I decided to ${orbCommandsInfo[id]?.icon ?? 'do ???'}`)
-    switch (id) {
-      case orbCommands.MOVE_RIGHT:
-        this.move(this.x + 1, this.y)
+  refreshSnapshot(radius: number) {
+    const snapshot = this.computeSnapshot(radius)
+    this.lastPerception = snapshot.perception
+    this.lastMotivations = snapshot.motivations
+    this.lastScanRadius = radius
+  }
+
+  computeSnapshot(radius: number): { perception: PerceivedCell[]; motivations: OrbMotivations } {
+    const { genes } = this
+    const hpNorm = clamp(this.hp / genes.hp_healthy_norm, 0, 1)
+    const riskDrive = clamp(hpNorm * genes.risk_tolerance, 0, 1)
+
+    const localDensityAt = (x: number, y: number) => {
+      let occupiedNeighbors = 0
+      let total = 0
+      for (let ddy = -1; ddy <= 1; ddy++) {
+        for (let ddx = -1; ddx <= 1; ddx++) {
+          if (ddx === 0 && ddy === 0) continue
+          const nx = x + ddx
+          const ny = y + ddy
+          if (!withinWorldBoundaries(nx, ny)) continue
+          total += 1
+          if (getCellOrbs(nx, ny).length > 0) {
+            occupiedNeighbors += 1
+          }
+        }
+      }
+      return total > 0 ? occupiedNeighbors / total : 0
+    }
+
+    const perception: PerceivedCell[] = []
+    let maxThreat = 0
+    let maxPrey = 0
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const tx = this.x + dx
+        const ty = this.y + dy
+
+        const inBounds = withinWorldBoundaries(tx, ty)
+        const energy = inBounds ? getCellEnergy(ty, tx) : 0
+
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const kernel = Math.pow(genes.distance_decay, dist)
+        const isDiagonal = dx !== 0 && dy !== 0
+        const diagModifier = isDiagonal ? genes.diagonal_awareness : 1.0
+
+        let threatSum = 0
+        let preySum = 0
+        let occupied = false
+
+        if (inBounds) {
+          const occupants = getCellOrbs(tx, ty, this.id)
+          occupied = occupants.length > 0
+          for (const other of occupants) {
+            const enemyHpNorm = clamp(other.hp / genes.hp_healthy_norm, 0, 1)
+
+            const enemyAdvantage = enemyHpNorm / Math.max(hpNorm, 0.001)
+            threatSum += enemyAdvantage * kernel * diagModifier
+
+            const ourAdvantage = hpNorm / Math.max(enemyHpNorm, 0.001)
+            const attackFeasibility = ourAdvantage / genes.attack_margin
+            const attackSignal = clamp(attackFeasibility - 1, 0, 1)
+
+            const fRetaliation = clamp(genes.retaliation_fear * enemyAdvantage * (1 - riskDrive), 0, 1)
+            const preySource = attackSignal * genes.cannibalism_factor * genes.territoriality * (1 - fRetaliation)
+            preySum += preySource * kernel * diagModifier
+          }
+        }
+
+        const threat = clamp(threatSum, 0, 1)
+        const prey = clamp(preySum, 0, 1)
+        const localDensity = inBounds ? localDensityAt(tx, ty) : 0
+
+        if (threat > maxThreat) {
+          maxThreat = threat
+        }
+        if (prey > maxPrey) {
+          maxPrey = prey
+        }
+
+        perception.push({
+          dx,
+          dy,
+          x: tx,
+          y: ty,
+          inBounds,
+          energy,
+          threat,
+          prey,
+          occupied,
+          localDensity
+        })
+      }
+    }
+
+    const hungerBase = clamp((1 - hpNorm) * genes.hunger_hp_sensitivity, 0, 1)
+    const starvationBoost = clamp((0.2 - hpNorm) / 0.2, 0, 1)
+    const hunger = clamp(hungerBase + starvationBoost * (1 - hungerBase), 0, 1)
+
+    const fearRaw = maxThreat * (1 - hpNorm) * genes.fear_hp_sensitivity
+    const fear = clamp(fearRaw, 0, 1)
+    const fearEffective = clamp(fear * (1 - riskDrive), 0, 1)
+
+    const aggression = clamp(maxPrey * hpNorm * genes.aggression_hp_sensitivity, 0, 1)
+
+    const effectiveDivRiskAversion = clamp(genes.division_risk_aversion * (1 - genes.recovery_optimism), 0, 1)
+    let reproduction = 0
+    if (hpNorm > genes.min_hp_to_divide) {
+      reproduction = clamp(
+        ((hpNorm - genes.min_hp_to_divide) / Math.max(1 - genes.min_hp_to_divide, 0.001)) *
+          genes.reproduction_urgency *
+          (1 - effectiveDivRiskAversion),
+        0,
+        1
+      )
+    }
+
+    const exploration = clamp(hpNorm * genes.exploration_hp_sensitivity, 0, 1)
+
+    return {
+      perception,
+      motivations: {
+        hpNorm,
+        riskDrive,
+        hunger,
+        fear,
+        fearEffective,
+        aggression,
+        reproduction,
+        exploration,
+        maxThreat,
+        maxPrey
+      }
+    }
+  }
+
+  decideAction(): ActionDecision {
+    const radius = scanRadius
+    this.refreshSnapshot(radius)
+
+    const motivations = this.lastMotivations ?? this.computeSnapshot(radius).motivations
+    const perception = this.lastPerception
+    const { genes } = this
+
+    const current = perception.find(c => c.dx === 0 && c.dy === 0) ?? null
+    const currentEnergy = current?.energy ?? 0
+    const currentEnergyNorm = clamp(currentEnergy / Math.max(genes.max_energy_norm, 1), 0, 1)
+    const currentThreat = current?.threat ?? 0
+    const currentLocalDensity = current?.localDensity ?? 0
+
+    const decisions: ActionDecision[] = []
+    const debug = selectedOrbIdForDebug === this.id
+    const debugRows: Array<{
+      type: ActionType
+      whyLines: string[]
+      target: string
+      dx?: number | null
+      dy?: number | null
+      base: number
+      inertia: number
+      noise: number
+      final: number
+    }> = []
+
+    const directionFromDelta = (dx: number, dy: number) => {
+      if (dx === 0 && dy === 0) return 'here'
+      const vertical = dy < 0 ? 'top' : dy > 0 ? 'bottom' : ''
+      const horizontal = dx < 0 ? 'left' : dx > 0 ? 'right' : ''
+      if (vertical && horizontal) return `${vertical} ${horizontal}`
+      return vertical || horizontal || 'here'
+    }
+
+    const W_hunger = genes.hunger_weight
+    const W_aggression = genes.aggression_weight
+    const W_exploration = genes.exploration_weight
+    const W_fear = genes.fear_weight
+    const W_reproduction = genes.reproduction_weight
+
+    let bestEnergyTarget:
+      | {
+          x: number
+          y: number
+          dist: number
+          strength: number
+        }
+      | null = null
+    for (const c of perception) {
+      if (!c.inBounds) continue
+      if (c.energy <= 0) continue
+      if (c.dx === 0 && c.dy === 0) continue
+      const energyNorm = clamp(c.energy / Math.max(genes.max_energy_norm, 1), 0, 1)
+      if (energyNorm <= 0) continue
+      const dist = Math.sqrt(c.dx * c.dx + c.dy * c.dy)
+      const strength = energyNorm * Math.pow(genes.distance_decay, dist)
+      if (!bestEnergyTarget || strength > bestEnergyTarget.strength) {
+        bestEnergyTarget = { x: c.x, y: c.y, dist, strength }
+      }
+    }
+
+    const spacePrefCurrent = clamp(
+      (1 - currentLocalDensity) * (1 - genes.crowd_preference) + currentLocalDensity * genes.crowd_preference,
+      0,
+      1
+    )
+
+    const waitFear = (1 - currentThreat) * (W_fear * motivations.fearEffective)
+    const waitExplore = spacePrefCurrent * (W_exploration * motivations.exploration)
+    const waitHunger = W_hunger * motivations.hunger
+    const waitUtility = waitFear + waitExplore - waitHunger
+    const waitDecision: ActionDecision = {
+      type: 'WAIT',
+      utility: waitUtility,
+      description: 'wait'
+    }
+    decisions.push(waitDecision)
+    if (debug) {
+      debugRows.push({
+        type: waitDecision.type,
+        whyLines: [
+          `I consider WAIT (stay at ${this.x},${this.y}).`,
+          `My hunger feeling is ${motivations.hunger.toFixed(3)} (0=full, 1=starving).`,
+          `My fear feeling is ${motivations.fear.toFixed(3)}, but effective fear is ${motivations.fearEffective.toFixed(3)} (fear reduced by risk-taking).`,
+          `Threat at my current cell is ${currentThreat.toFixed(3)} (0=safe, 1=danger).`,
+          ``,
+          `Good thing about waiting: it feels safer when threat is low.`,
+          `Safety factor = 1 - threat = ${(1 - currentThreat).toFixed(3)}.`,
+          `I care about safety with fear weight W_fear=${W_fear.toFixed(3)}.`,
+          `Safety desire = W_fear * effectiveFear = ${W_fear.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${(W_fear * motivations.fearEffective).toFixed(3)}.`,
+          `So the safety bonus for WAIT is: safetyFactor * safetyDesire = ${(1 - currentThreat).toFixed(3)} * ${(W_fear * motivations.fearEffective).toFixed(3)} = ${waitFear.toFixed(3)}.`,
+          ``,
+          `Another good thing about waiting: I like comfortable space.`,
+          `Local crowding here is ${currentLocalDensity.toFixed(3)} (0=alone, 1=crowded).`,
+          `My crowd preference gene is ${genes.crowd_preference.toFixed(3)} (0=prefer space, 1=prefer crowds).`,
+          `So "space preference here" becomes ${spacePrefCurrent.toFixed(3)}.`,
+          `I care about exploration with W_explore=${W_exploration.toFixed(3)} and my exploration mood is ${motivations.exploration.toFixed(3)}.`,
+          `Explore desire = W_explore * explorationMood = ${W_exploration.toFixed(3)} * ${motivations.exploration.toFixed(3)} = ${(W_exploration * motivations.exploration).toFixed(3)}.`,
+          `So the explore bonus for WAIT is: spacePref * exploreDesire = ${spacePrefCurrent.toFixed(3)} * ${(W_exploration * motivations.exploration).toFixed(3)} = ${waitExplore.toFixed(3)}.`,
+          ``,
+          `Bad thing about waiting: hunger pushes me to act.`,
+          `Hunger penalty = W_hunger * hunger = ${W_hunger.toFixed(3)} * ${motivations.hunger.toFixed(3)} = ${waitHunger.toFixed(3)}.`,
+          ``,
+          `Base score for WAIT = safetyBonus + exploreBonus - hungerPenalty = ${waitFear.toFixed(3)} + ${waitExplore.toFixed(3)} - ${waitHunger.toFixed(3)} = ${waitUtility.toFixed(3)}.`
+        ],
+        target: `${this.x},${this.y}`,
+        dx: 0,
+        dy: 0,
+        base: waitUtility,
+        inertia: 0,
+        noise: 0,
+        final: 0
+      })
+    }
+
+    if (currentEnergy > 0) {
+      const consumeGainNorm = clamp(hpGainByEnergyConsumption / Math.max(genes.hp_healthy_norm, 1), 0, 1)
+      const arriveHungry = this.lastActionType === 'MOVE' && motivations.hunger > 0.15
+      const continueConsuming = this.lastActionType === 'CONSUME' && motivations.hunger > 0.05
+      const consumeStickiness = (arriveHungry ? 0.6 : 0) + (continueConsuming ? 0.3 : 0)
+      const consumeGain = W_hunger * motivations.hunger * (consumeGainNorm + currentEnergyNorm + consumeStickiness)
+      const consumeFear = W_fear * currentThreat * motivations.fearEffective
+      const consumeUtility = consumeGain - consumeFear
+      const consumeDecision: ActionDecision = {
+        type: 'CONSUME',
+        utility: consumeUtility,
+        description: 'consume energy'
+      }
+      decisions.push(consumeDecision)
+      if (debug) {
+        debugRows.push({
+          type: consumeDecision.type,
+          whyLines: [
+            `I consider CONSUME (eat 1 energy from the ground at ${this.x},${this.y}).`,
+            `There is ${currentEnergy.toFixed(3)} energy on this cell.`,
+            `Energy normalized (relative to maxEnergyNorm=${genes.max_energy_norm.toFixed(3)}) is ${currentEnergyNorm.toFixed(3)}.`,
+            `Eating 1 energy would heal me by ${hpGainByEnergyConsumption.toFixed(3)} hp.`,
+            `That heal amount normalized (relative to my healthy hp norm ${genes.hp_healthy_norm.toFixed(3)}) is ${consumeGainNorm.toFixed(3)}.`,
+            ``,
+            `How hungry am I? hunger=${motivations.hunger.toFixed(3)} and I care with W_hunger=${W_hunger.toFixed(3)}.`,
+            `Sometimes I "stick" with consuming if I just arrived hungry or I was already consuming.`,
+            `Last action type was "${this.lastActionType ?? ''}".`,
+            `Arrived hungry? ${this.lastActionType === 'MOVE' && motivations.hunger > 0.15 ? 'yes' : 'no'} (needs lastAction=MOVE and hunger>0.15).`,
+            `Continue consuming? ${this.lastActionType === 'CONSUME' && motivations.hunger > 0.05 ? 'yes' : 'no'} (needs lastAction=CONSUME and hunger>0.05).`,
+            `Stickiness bonus = ${consumeStickiness.toFixed(3)}.`,
+            ``,
+            `The "food attraction" for consuming is: W_hunger * hunger * (healNorm + energyNormHere + stickiness).`,
+            `= ${W_hunger.toFixed(3)} * ${motivations.hunger.toFixed(3)} * (${consumeGainNorm.toFixed(3)} + ${currentEnergyNorm.toFixed(3)} + ${consumeStickiness.toFixed(3)})`,
+            `= ${consumeGain.toFixed(3)}.`,
+            ``,
+            `But I also fear staying here if it's dangerous.`,
+            `Fear cost = W_fear * threatHere * effectiveFear = ${W_fear.toFixed(3)} * ${currentThreat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${consumeFear.toFixed(3)}.`,
+            ``,
+            `Base score for CONSUME = foodAttraction - fearCost = ${consumeGain.toFixed(3)} - ${consumeFear.toFixed(3)} = ${consumeUtility.toFixed(3)}.`
+          ],
+          target: `${this.x},${this.y}`,
+          dx: 0,
+          dy: 0,
+          base: consumeUtility,
+          inertia: 0,
+          noise: 0,
+          final: 0
+        })
+      }
+    }
+
+    const hasEmptyNeighbor = perception.some(
+      c => c.inBounds && !(c.dx === 0 && c.dy === 0) && Math.abs(c.dx) <= 1 && Math.abs(c.dy) <= 1 && !c.occupied
+    )
+
+    if (canGiveBirth(this) && hasEmptyNeighbor) {
+      const birthCost = computeBirthCost(this.hp, genes)
+      const divideRepro = W_reproduction * motivations.reproduction
+      const divideFear = W_fear * currentThreat * motivations.fearEffective
+      const divideHunger = W_hunger * motivations.hunger * birthCost.costFraction
+      const divideUtility = divideRepro - divideFear - divideHunger
+      const divideDecision: ActionDecision = {
+        type: 'DIVIDE',
+        utility: divideUtility,
+        description: 'divide'
+      }
+      decisions.push(divideDecision)
+      if (debug) {
+        debugRows.push({
+          type: divideDecision.type,
+          whyLines: [
+            `I consider DIVIDE (make a child near ${this.x},${this.y}).`,
+            `Can I give birth right now? ${canGiveBirth(this) ? 'yes' : 'no'}.`,
+            `Is there an empty neighboring cell to place a child? ${hasEmptyNeighbor ? 'yes' : 'no'}.`,
+            ``,
+            `My reproduction desire is ${motivations.reproduction.toFixed(3)} and I care with W_reproduction=${W_reproduction.toFixed(3)}.`,
+            `Reproduction bonus = W_reproduction * reproduction = ${W_reproduction.toFixed(3)} * ${motivations.reproduction.toFixed(3)} = ${divideRepro.toFixed(3)}.`,
+            ``,
+            `But dividing is scary if the area is dangerous.`,
+            `Fear cost = W_fear * threatHere * effectiveFear = ${W_fear.toFixed(3)} * ${currentThreat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${divideFear.toFixed(3)}.`,
+            ``,
+            `And dividing makes me pay an hp cost (I invest into the child).`,
+            `Offspring investment gene is ${genes.offspring_investment.toFixed(3)} (fraction of my hp).`,
+            `Birth tax is ${birthTaxPercent.toFixed(0)}% of my current hp.`,
+            `So total hp cost fraction is ${birthCost.costFraction.toFixed(3)} (child=${birthCost.childHp}, tax=${birthCost.tax}, total=${birthCost.totalCost}).`,
+            `So hunger makes dividing feel more expensive.`,
+            `Hunger cost = W_hunger * hunger * totalCostFraction = ${W_hunger.toFixed(3)} * ${motivations.hunger.toFixed(3)} * ${birthCost.costFraction.toFixed(3)} = ${divideHunger.toFixed(3)}.`,
+            ``,
+            `Base score for DIVIDE = reproBonus - fearCost - hungerCost = ${divideRepro.toFixed(3)} - ${divideFear.toFixed(3)} - ${divideHunger.toFixed(3)} = ${divideUtility.toFixed(3)}.`
+          ],
+          target: `near ${this.x},${this.y}`,
+          dx: null,
+          dy: null,
+          base: divideUtility,
+          inertia: 0,
+          noise: 0,
+          final: 0
+        })
+      }
+    }
+
+    const neighbors = perception.filter(
+      c => c.inBounds && !(c.dx === 0 && c.dy === 0) && Math.abs(c.dx) <= 1 && Math.abs(c.dy) <= 1
+    )
+
+    const attackDrive =
+      (W_aggression * motivations.aggression + W_hunger * motivations.hunger) / Math.max(W_aggression + W_hunger, 0.001)
+
+    for (const cell of neighbors) {
+      const cellEnergyNorm = clamp(cell.energy / Math.max(genes.max_energy_norm, 1), 0, 1)
+      const spacePref = clamp(
+        (1 - cell.localDensity) * (1 - genes.crowd_preference) + cell.localDensity * genes.crowd_preference,
+        0,
+        1
+      )
+
+      const moveHunger = W_hunger * cellEnergyNorm * motivations.hunger
+      const seekInfo =
+        bestEnergyTarget && bestEnergyTarget.strength > 0
+          ? (() => {
+              const newDist = Math.sqrt(
+                (bestEnergyTarget.x - cell.x) * (bestEnergyTarget.x - cell.x) +
+                  (bestEnergyTarget.y - cell.y) * (bestEnergyTarget.y - cell.y)
+              )
+              const toward = Math.max(0, bestEnergyTarget.dist - newDist)
+              const pull = clamp(bestEnergyTarget.strength * toward, 0, 1)
+              const score = W_hunger * motivations.hunger * pull
+              return {
+                bestX: bestEnergyTarget.x,
+                bestY: bestEnergyTarget.y,
+                bestDist: bestEnergyTarget.dist,
+                bestStrength: bestEnergyTarget.strength,
+                newDist,
+                toward,
+                pull,
+                score
+              }
+            })()
+          : null
+      const moveSeekEnergy = seekInfo?.score ?? 0
+      const moveAggro = W_aggression * cell.prey * motivations.aggression
+      const moveExplore = W_exploration * spacePref * motivations.exploration
+      const moveFear = W_fear * cell.threat * motivations.fearEffective
+      const moveUtil = moveHunger + moveSeekEnergy + moveAggro + moveExplore - moveFear
+
+      if (!cell.occupied) {
+        const moveDecision: ActionDecision = {
+          type: 'MOVE',
+          targetX: cell.x,
+          targetY: cell.y,
+          utility: moveUtil,
+          description: `move to ${cell.x},${cell.y}`
+        }
+        decisions.push(moveDecision)
+        if (debug) {
+          debugRows.push({
+            type: moveDecision.type,
+            whyLines: [
+              `I consider MOVE to ${cell.x},${cell.y} (dx=${cell.dx}, dy=${cell.dy}).`,
+              `Is the destination occupied? no.`,
+              ``,
+              `Food on destination: this cell has ${cell.energy.toFixed(3)} energy.`,
+              `Energy normalized is ${cellEnergyNorm.toFixed(3)} (relative to maxEnergyNorm=${genes.max_energy_norm.toFixed(3)}).`,
+              `My hunger is ${motivations.hunger.toFixed(3)} and W_hunger is ${W_hunger.toFixed(3)}.`,
+              `So this cell looks attractive for food by: W_hunger * hunger * energyNorm = ${W_hunger.toFixed(3)} * ${motivations.hunger.toFixed(3)} * ${cellEnergyNorm.toFixed(3)} = ${moveHunger.toFixed(3)}.`,
+              ...(seekInfo
+                ? [
+                    ``,
+                    `I also see a "best energy spot" somewhere: ${seekInfo.bestX},${seekInfo.bestY}.`,
+                    `Its strength (after distance decay) is ${seekInfo.bestStrength.toFixed(3)}.`,
+                    `If I go to ${cell.x},${cell.y}, my distance to that best spot becomes ${seekInfo.newDist.toFixed(3)}.`,
+                    `Right now my distance to that best spot is ${seekInfo.bestDist.toFixed(3)}.`,
+                    `Moving toward it by ${seekInfo.toward.toFixed(3)} gives me a pull of ${seekInfo.pull.toFixed(3)} (0..1).`,
+                    `That pull becomes extra motivation: W_hunger * hunger * pull = ${W_hunger.toFixed(3)} * ${motivations.hunger.toFixed(3)} * ${seekInfo.pull.toFixed(3)} = ${moveSeekEnergy.toFixed(3)}.`
+                  ]
+                : []),
+              ``,
+              `Hunting/attack opportunity: prey score at destination is ${cell.prey.toFixed(3)}.`,
+              `My aggression mood is ${motivations.aggression.toFixed(3)} and W_aggression is ${W_aggression.toFixed(3)}.`,
+              `So prey bonus = W_aggression * aggression * prey = ${W_aggression.toFixed(3)} * ${motivations.aggression.toFixed(3)} * ${cell.prey.toFixed(3)} = ${moveAggro.toFixed(3)}.`,
+              ``,
+              `Comfort/exploration: local density there is ${cell.localDensity.toFixed(3)}, crowd preference gene is ${genes.crowd_preference.toFixed(3)}.`,
+              `So space preference there is ${spacePref.toFixed(3)}.`,
+              `Exploration mood is ${motivations.exploration.toFixed(3)} and W_explore is ${W_exploration.toFixed(3)}.`,
+              `Explore bonus = W_explore * exploration * spacePref = ${W_exploration.toFixed(3)} * ${motivations.exploration.toFixed(3)} * ${spacePref.toFixed(3)} = ${moveExplore.toFixed(3)}.`,
+              ``,
+              `Fear: threat there is ${cell.threat.toFixed(3)} and my effective fear is ${motivations.fearEffective.toFixed(3)} with W_fear=${W_fear.toFixed(3)}.`,
+              `Fear cost = W_fear * threat * effectiveFear = ${W_fear.toFixed(3)} * ${cell.threat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${moveFear.toFixed(3)}.`,
+              ``,
+              `Base score for MOVE = food + seekFood + prey + explore - fear`,
+              `= ${moveHunger.toFixed(3)} + ${moveSeekEnergy.toFixed(3)} + ${moveAggro.toFixed(3)} + ${moveExplore.toFixed(3)} - ${moveFear.toFixed(3)} = ${moveUtil.toFixed(3)}.`
+            ],
+            target: `${cell.x},${cell.y} (dx=${cell.dx},dy=${cell.dy})`,
+            dx: cell.dx,
+            dy: cell.dy,
+            base: moveUtil,
+            inertia: 0,
+            noise: 0,
+            final: 0
+          })
+        }
+      } else if (cell.prey > 0) {
+        const eatPreyDrive = cell.prey * attackDrive
+        const eatGreed = genes.kill_greed * cell.prey
+        const eatFear = W_fear * cell.threat * motivations.fearEffective
+        const eatUtility = eatPreyDrive + eatGreed - eatFear
+        const eatDecision: ActionDecision = {
+          type: 'EAT',
+          targetX: cell.x,
+          targetY: cell.y,
+          utility: eatUtility,
+          description: `eat at ${cell.x},${cell.y}`
+        }
+        decisions.push(eatDecision)
+        if (debug) {
+          debugRows.push({
+            type: eatDecision.type,
+            whyLines: [
+              `I consider EAT at ${cell.x},${cell.y} (dx=${cell.dx}, dy=${cell.dy}).`,
+              `Is there prey there? yes (prey score=${cell.prey.toFixed(3)}).`,
+              `Threat there is ${cell.threat.toFixed(3)}.`,
+              ``,
+              `I combine hunger and aggression into an "attackDrive" so I know how much I want to bite.`,
+              `attackDrive=${attackDrive.toFixed(3)} (mix of hunger and aggression weights/moods).`,
+              `So the main eating drive is: prey * attackDrive = ${cell.prey.toFixed(3)} * ${attackDrive.toFixed(3)} = ${eatPreyDrive.toFixed(3)}.`,
+              ``,
+              `I also have a "kill greed" gene that makes me want to attack even beyond pure need.`,
+              `kill_greed=${genes.kill_greed.toFixed(3)} so greed bonus = kill_greed * prey = ${genes.kill_greed.toFixed(3)} * ${cell.prey.toFixed(3)} = ${eatGreed.toFixed(3)}.`,
+              ``,
+              `But eating is risky if the area is dangerous.`,
+              `Fear cost = W_fear * threat * effectiveFear = ${W_fear.toFixed(3)} * ${cell.threat.toFixed(3)} * ${motivations.fearEffective.toFixed(3)} = ${eatFear.toFixed(3)}.`,
+              ``,
+              `Base score for EAT = drive + greed - fearCost = ${eatPreyDrive.toFixed(3)} + ${eatGreed.toFixed(3)} - ${eatFear.toFixed(3)} = ${eatUtility.toFixed(3)}.`
+            ],
+            target: `${cell.x},${cell.y} (dx=${cell.dx},dy=${cell.dy})`,
+            dx: cell.dx,
+            dy: cell.dy,
+            base: eatUtility,
+            inertia: 0,
+            noise: 0,
+            final: 0
+          })
+        }
+      }
+    }
+
+    for (let i = 0; i < decisions.length; i++) {
+      const d = decisions[i]
+      const base = d.utility
+      const inertia = (1 - genes.inertia_bias) * base + genes.inertia_bias * this.lastActionUtility
+      const noise = (Math.random() * 2 - 1) * genes.decision_noise
+      const finalUtil = inertia + noise
+      d.utility = finalUtil
+      if (debug) {
+        debugRows[i].inertia = inertia
+        debugRows[i].noise = noise
+        debugRows[i].final = finalUtil
+        debugRows[i].whyLines.push(
+          ``,
+          `Now I turn this base score into a final score (because I'm not perfectly rational).`,
+          `Base score = ${base.toFixed(3)}.`,
+          `My inertia_bias gene is ${genes.inertia_bias.toFixed(3)}.`,
+          `My last action score was ${this.lastActionUtility.toFixed(3)}.`,
+          `I blend them: inertia = (1-inertia_bias)*base + inertia_bias*last = ${(1 - genes.inertia_bias).toFixed(3)}*${base.toFixed(3)} + ${genes.inertia_bias.toFixed(3)}*${this.lastActionUtility.toFixed(3)} = ${inertia.toFixed(3)}.`,
+          `Then I add randomness: decision_noise gene is ${genes.decision_noise.toFixed(3)}.`,
+          `Random noise sampled this turn is ${noise.toFixed(3)}.`,
+          `Final score = inertia + noise = ${inertia.toFixed(3)} + ${noise.toFixed(3)} = ${finalUtil.toFixed(3)}.`
+        )
+      }
+    }
+
+    const impulsiveRoll = Math.random()
+    if (impulsiveRoll < genes.impulsiveness) {
+      const pickRoll = Math.random()
+      const picked = decisions[Math.floor(pickRoll * decisions.length)]
+      if (debug) {
+        console.groupCollapsed(
+          `Decision: ${this.name} age=${this.age} hp=${this.hp.toFixed(2)} @${this.x},${this.y} (impulsive)`
+        )
+        console.table({
+          id: this.id,
+          hpNorm: Number(motivations.hpNorm.toFixed(3)),
+          hunger: Number(motivations.hunger.toFixed(3)),
+          fear: Number(motivations.fear.toFixed(3)),
+          fearEffective: Number(motivations.fearEffective.toFixed(3)),
+          aggression: Number(motivations.aggression.toFixed(3)),
+          reproduction: Number(motivations.reproduction.toFixed(3)),
+          exploration: Number(motivations.exploration.toFixed(3))
+        })
+        console.table({
+          W_hunger: Number(W_hunger.toFixed(3)),
+          W_aggression: Number(W_aggression.toFixed(3)),
+          W_exploration: Number(W_exploration.toFixed(3)),
+          W_fear: Number(W_fear.toFixed(3)),
+          inertia_bias: Number(genes.inertia_bias.toFixed(3)),
+          decision_noise: Number(genes.decision_noise.toFixed(3)),
+          impulsiveness: Number(genes.impulsiveness.toFixed(3))
+        })
+        console.table({
+          currentEnergy: Number(currentEnergy.toFixed(3)),
+          currentEnergyNorm: Number(currentEnergyNorm.toFixed(3)),
+          currentThreat: Number(currentThreat.toFixed(3)),
+          currentLocalDensity: Number(currentLocalDensity.toFixed(3)),
+          spacePrefCurrent: Number(spacePrefCurrent.toFixed(3)),
+          lastActionUtility: Number(this.lastActionUtility.toFixed(3)),
+          lastActionType: this.lastActionType ?? ''
+        })
+        console.log(`impulsiveRoll=${impulsiveRoll.toFixed(3)} pickRoll=${pickRoll.toFixed(3)}`)
+        console.table(
+          debugRows.map(r => ({
+            type: r.type,
+            target: r.target,
+            direction:
+              typeof r.dx === 'number' && typeof r.dy === 'number' ? directionFromDelta(r.dx, r.dy) : '',
+            dx: typeof r.dx === 'number' ? r.dx : '',
+            dy: typeof r.dy === 'number' ? r.dy : '',
+            base: Number(r.base.toFixed(3)),
+            inertia: Number(r.inertia.toFixed(3)),
+            noise: Number(r.noise.toFixed(3)),
+            final: Number(r.final.toFixed(3)),
+          }))
+        )
+        for (const r of debugRows) {
+          const dx = r.dx
+          const dy = r.dy
+          const hasDelta = typeof dx === 'number' && typeof dy === 'number'
+          const direction = hasDelta ? directionFromDelta(dx, dy) : ''
+          const deltaText = hasDelta ? ` (${direction}, dx=${dx}, dy=${dy})` : ''
+          console.groupCollapsed(`${r.type} to ${r.target}${deltaText}`)
+          for (const line of r.whyLines) {
+            if (line.length === 0) console.log('')
+            else console.log(`  ${line}`)
+          }
+          console.groupEnd()
+        }
+        const pickedIndex = decisions.indexOf(picked)
+        const pickedRow = pickedIndex >= 0 ? debugRows[pickedIndex] : null
+        const pickedDir =
+          pickedRow && typeof pickedRow.dx === 'number' && typeof pickedRow.dy === 'number'
+            ? directionFromDelta(pickedRow.dx, pickedRow.dy)
+            : ''
+        const pickedDirText = pickedDir ? ` (${pickedDir})` : ''
+        const pickedTarget = pickedRow ? ` to ${pickedRow.target}` : ''
+        console.log(`picked: ${picked.type}${pickedTarget}${pickedDirText} (${picked.description}) u=${picked.utility.toFixed(3)}`)
+        console.groupEnd()
+      }
+      return picked
+    }
+
+    let best = decisions[0]
+    for (const d of decisions) {
+      if (d.utility > best.utility) best = d
+    }
+
+    if (debug) {
+      console.groupCollapsed(`Decision: ${this.name} age=${this.age} hp=${this.hp.toFixed(2)} @${this.x},${this.y}`)
+      console.log('My motivations:')
+      console.table({
+        hpNorm: Number(motivations.hpNorm.toFixed(3)),
+        fearEffective: Number(motivations.fearEffective.toFixed(3)),
+        hunger: Number(motivations.hunger.toFixed(3)),
+        fear: Number(motivations.fear.toFixed(3)),
+        aggression: Number(motivations.aggression.toFixed(3)),
+        reproduction: Number(motivations.reproduction.toFixed(3)),
+        exploration: Number(motivations.exploration.toFixed(3))
+      })
+      console.log('My gene motivation weights:')
+      console.table({
+          W_hunger: Number(W_hunger.toFixed(3)),
+          W_aggression: Number(W_aggression.toFixed(3)),
+          W_exploration: Number(W_exploration.toFixed(3)),
+          W_fear: Number(W_fear.toFixed(3)),
+          W_reproductions: Number(W_reproduction.toFixed(3)),
+      })
+      console.log('My gene decision modifiers:')
+      console.table({
+        inertia_bias: Number(genes.inertia_bias.toFixed(3)),
+        decision_noise: Number(genes.decision_noise.toFixed(3)),
+        impulsiveness: Number(genes.impulsiveness.toFixed(3))
+      })
+      console.table({
+        currentEnergy: Number(currentEnergy.toFixed(3)),
+        currentEnergyNorm: Number(currentEnergyNorm.toFixed(3)),
+        currentThreat: Number(currentThreat.toFixed(3)),
+        currentLocalDensity: Number(currentLocalDensity.toFixed(3)),
+        spacePrefCurrent: Number(spacePrefCurrent.toFixed(3)),
+        lastActionUtility: Number(this.lastActionUtility.toFixed(3)),
+        lastActionType: this.lastActionType ?? ''
+      })
+      console.log(`impulsiveRoll=${impulsiveRoll.toFixed(3)}`)
+      console.table(
+        debugRows.map(r => ({
+          type: r.type,
+          target: r.target,
+          base: Number(r.base.toFixed(3)),
+          inertia: Number(r.inertia.toFixed(3)),
+          noise: Number(r.noise.toFixed(3)),
+          final: Number(r.final.toFixed(3)),
+        }))
+      )
+      for (const r of debugRows) {
+        const dx = r.dx
+        const dy = r.dy
+        const hasDelta = typeof dx === 'number' && typeof dy === 'number'
+        const direction = hasDelta ? directionFromDelta(dx, dy) : ''
+        const deltaText = hasDelta ? ` (${direction}, dx=${dx}, dy=${dy})` : ''
+        console.groupCollapsed(`${r.type} to ${r.target}${deltaText}`)
+        for (const line of r.whyLines) {
+          if (line.length === 0) console.log('')
+          else console.log(`  ${line}`)
+        }
+        console.groupEnd()
+      }
+      console.log(`best: ${best.type} (${best.description}) u=${best.utility.toFixed(3)}`)
+      console.groupEnd()
+    }
+
+    this.lastActionUtility = best.utility
+    return best
+  }
+
+  executeDecision(d: ActionDecision) {
+    this.lastActionType = d.type
+    this.addToLog(`I decided to ${d.description} (u=${d.utility.toFixed(2)})`)
+    
+    switch (d.type) {
+      case 'WAIT':
+        this.addToLog('zZz...')
         break
-      case orbCommands.MOVE_LEFT:
-        this.move(this.x - 1, this.y)
-        break
-      case orbCommands.MOVE_UP:
-        this.move(this.x, this.y + 1)
-        break
-      case orbCommands.MOVE_DOWN:
-        this.move(this.x, this.y - 1)
-        break
-      case orbCommands.CONSUME_ENERGY: {
+      case 'CONSUME':
         this.consumeEnergy()
         break
-      }
-      case orbCommands.BITE_LEFT: {
-        this.bite(this.x - 1, this.y)
-      }
+      case 'MOVE':
+        if (d.targetX !== undefined && d.targetY !== undefined) {
+           this.move(d.targetX, d.targetY)
+        }
         break
-      case orbCommands.BITE_RIGHT: {
-        this.bite(this.x + 1, this.y)
-      }
+      case 'EAT':
+        if (d.targetX !== undefined && d.targetY !== undefined) {
+           this.bite(d.targetX, d.targetY)
+        }
         break
-      case orbCommands.BITE_UP: {
-        this.bite(this.x, this.y + 1)
-      }
-        break
-      case orbCommands.BITE_DOWN: {
-        this.bite(this.x, this.y - 1)
-        break
-      }
-      case orbCommands.WATCH_RIGHT:
-        this.watch(this.x + 1, this.y)
-        break
-      case orbCommands.WATCH_LEFT:
-        this.watch(this.x - 1, this.y)
-        break
-      case orbCommands.WATCH_TOP:
-        this.watch(this.x, this.y + 1)
-        break
-      case orbCommands.WATCH_BOTTOM:
-        this.watch(this.x, this.y - 1)
-        break
-      case orbCommands.GIVE_BIRTH_LEFT:
-        this.giveBirth(this.x - 1, this.y)
-        break
-      case orbCommands.GIVE_BIRTH_RIGHT:
-        this.giveBirth(this.x + 1, this.y)
-        break
-      case orbCommands.GIVE_BIRTH_UP:
-        this.giveBirth(this.x, this.y + 1)
-        break
-      case orbCommands.GIVE_BIRTH_DOWN:
-        this.giveBirth(this.x, this.y - 1)
+      case 'DIVIDE':
+        // Try to divide into a free neighbor
+        this.attemptDivide()
         break
     }
   }
 
-  // -- commands --
+  // -- Actions --
 
   move(x: number, y: number) {
     const occupants = getCellOrbs(x, y)
@@ -324,6 +1052,9 @@ class Orb {
     }
 
     this.addToLog(`It worked`)
+    if (getCellEnergy(this.y, this.x) > 0) {
+      this.consumeEnergy()
+    }
   }
 
   bite(x: number, y: number) {
@@ -339,117 +1070,61 @@ class Orb {
   }
 
   eat(prey: Orb) {
-    if (prey instanceof Orb) {
-      const canEat = prey.hp < this.hp
-      if (!canEat) {
-        this.addToLog(`I failed to eat ${prey.id} (target is bigger)`)
-        return
-      }
-
-      // Gain full health from prey (all of its current hp)
-      const hpGain = prey.hp
-      this.hp += hpGain
-      registerHpGainedFromEating(hpGain)
-      this.addToLog(`I ate Orb ${prey.id} and got ${hpGain}hp`)
-
-      // Eating prevents aging for this turn
-      this.preventAgingThisTurn = true
-
-      prey.addToLog(`I was eaten by ${this.id}`)
-      prey.deathReason = deathReasons.EATEN
-      prey.loseHp(prey.hp)
+    // Logic for canEat is already checked in decision usually, but double check
+    if (!canEatOrb(this, prey)) {
+      this.addToLog(`I failed to eat ${prey.id} (target is bigger)`)
+      return
     }
+
+    // Gain full health from prey
+    const hpGain = prey.hp
+    this.hp += hpGain
+    registerHpGainedFromEating(hpGain)
+    this.addToLog(`I ate Orb ${prey.id} and got ${hpGain}hp`)
+
+    // Eating prevents aging for this turn
+    this.preventAgingThisTurn = true
+
+    prey.addToLog(`I was eaten by ${this.id}`)
+    prey.deathReason = deathReasons.EATEN
+    prey.loseHp(prey.hp)
   }
 
-  watch(x: number, y: number) {
-    // Determine direction of the watched cell relative to current orb
-    const dx = x - this.x
-    const dy = y - this.y
-    let dirIndex: number | null = null
-    if (dx === -1 && dy === 0) {
-      dirIndex = reactionDirections.LEFT
+  attemptDivide() {
+    // Find empty neighbor
+    const neighbors = [
+      [this.x - 1, this.y], [this.x + 1, this.y],
+      [this.x, this.y - 1], [this.x, this.y + 1]
+    ]
+    for (const [nx, ny] of neighbors) {
+       if (withinWorldBoundaries(nx, ny) && getCellOrbs(nx, ny).length === 0) {
+         this.giveBirth(nx, ny)
+         return
+       }
     }
-    if (dx === 1 && dy === 0) {
-      dirIndex = reactionDirections.RIGHT
-    }
-    if (dx === 0 && dy === 1) {
-      dirIndex = reactionDirections.TOP
-    }
-    if (dx === 0 && dy === -1) {
-      dirIndex = reactionDirections.BOTTOM
-    }
-
-    let signalIndex
-
-    if (!withinWorldBoundaries(x, y)) {
-      this.addToLog('I looked out of the world')
-      signalIndex = 0
-    } else {
-      const cellOrbs = getCellOrbs(x, y)
-      if (cellOrbs.length === 0) {
-        if (getCellEnergy(y, x) > 0) {
-          this.addToLog('I saw energy')
-          signalIndex = 1
-        } else {
-          this.addToLog('I saw nothing')
-          signalIndex = 2
-        }
-      } else {
-        this.addToLog('I saw an orb')
-        if (cellOrbs.some(o => o.hp < this.hp)) {
-          this.addToLog('smaller than me')
-          signalIndex = 3
-        } else {
-          this.addToLog('bigger than me')
-          signalIndex = 4
-        }
-      }
-    }
-
-    this.addToLog('and performed a reaction:')
-
-    // If direction cannot be determined (shouldn't happen in normal usage), fallback to appropriate watch row
-    const safeDirIndex = dirIndex ?? reactionDirections.LEFT
-    const reactionCommandId = this.reactions[safeDirIndex]?.[signalIndex]
-    if (reactionCommandId === undefined) {
-      this.addToLog('no reaction configured')
-      return
-    }
-    // Guard against recursive watch → watch chains
-    if (
-      reactionCommandId === orbCommands.WATCH_LEFT ||
-      reactionCommandId === orbCommands.WATCH_RIGHT ||
-      reactionCommandId === orbCommands.WATCH_TOP ||
-      reactionCommandId === orbCommands.WATCH_BOTTOM
-    ) {
-      this.addToLog('ignored recursive watch reaction')
-      return
-    }
-    this.executeCommand(reactionCommandId)
+    this.addToLog('No space to divide')
   }
 
   giveBirth(x: number, y: number) {
-    if (!withinWorldBoundaries(x, y)) {
-      this.addToLog(`I tried to give birth out of the world`)
-      return
-    }
-
-    const occupants = getCellOrbs(x, y)
-    if (occupants.length > 0) {
-      this.addToLog(`I tried to give birth into occupied cell`)
-      return
-    }
-
-    if (this.hp >= splitHPThreshold) {
+    if (canGiveBirth(this)) {
       this.triggerGlow('glow-green')
+      
+      const { childHp, totalCost } = computeBirthCost(this.hp, this.genes)
+      
+      // Safety check
+      if (this.hp - totalCost <= 0) {
+         this.addToLog('Too weak to divide')
+         return
+      }
 
-      const child = spawnOrb(x, y, Math.ceil(this.hp / 2), this.dna, this.reactions, this.name)
+      const child = spawnOrb(x, y, childHp, this.genes, this.name)
 
-      this.loseHp(Math.floor(this.hp / 2))
+      this.loseHp(totalCost)
+      this.reproductionCooldownRemaining = Math.max(0, Math.round(this.genes.reproduction_cooldown))
       this.addToLog(`It spawned ${child.name}`)
       registerBirth()
     } else {
-      this.addToLog(`I did not have enough hp`)
+      this.addToLog(`I cannot give birth right now`)
     }
   }
 
@@ -469,13 +1144,6 @@ class Orb {
   }
 
   // -- helpers --
-
-  moveDnaPointer(value: number) {
-    this.dnaPointer += value
-    if (this.dnaPointer >= this.dna.length) {
-      this.dnaPointer = 0
-    }
-  }
 
   gainHp(amount: number) {
     this.hp += amount
@@ -524,26 +1192,19 @@ class Orb {
   }
 
   getColor() {
-    const greens = this.dna.reduce((sum, item) => {
-      return item === orbCommands.CONSUME_ENERGY
-        ? sum + item
-        : sum
-    }, 0)
-
-    const reds = this.dna.reduce((sum, item) => {
-      return [
-        orbCommands.BITE_LEFT,
-        orbCommands.BITE_RIGHT,
-        orbCommands.BITE_UP,
-        orbCommands.BITE_DOWN
-      ].includes(item)
-        ? sum + item
-        : sum
-    }, 0)
+    // Color based on genes
+    // Aggression -> Red
+    // Consumption/Hunger -> Green
+    // Fear/Social -> Blue
+    
+    const r = Math.min(255, this.genes.aggression_weight * 100 + this.genes.aggression_hp_sensitivity * 100)
+    const g = Math.min(255, this.genes.hunger_weight * 100 + this.genes.hunger_hp_sensitivity * 50)
+    const b = Math.min(255, this.genes.fear_weight * 100 + this.genes.exploration_weight * 20)
 
     return {
-      reds,
-      greens
+      reds: r,
+      greens: g,
+      blues: b
     }
   }
 }
@@ -589,7 +1250,7 @@ function generateWorld(worldIteration: number = 0) {
         const [ x, y ] = getRandomEmptyCell()
         const hp = getRandomMinMax(initialOrbHP[0], initialOrbHP[1])
         // First orbs of a new generation should have only one name (DNA-based)
-        spawnOrb(x, y, hp, strongestOrb.dna, strongestOrb.reactions)
+        spawnOrb(x, y, hp, strongestOrb.genes)
       }
     }
 
@@ -610,6 +1271,7 @@ function generateWorld(worldIteration: number = 0) {
   } else {
     // первая генерация
     orbs = []
+    spawnArchetypeCursor = 0
     for (let i = 0; i < initialOrbsCount; i++) {
       const [ x, y ] = getRandomEmptyCell()
       const hp = getRandomMinMax(initialOrbHP[0], initialOrbHP[1])
@@ -656,19 +1318,14 @@ function spawnOrb(
   x: number,
   y: number,
   hp: number,
-  ancestorDNA: number[] = [],
-  ancestorReactions: number[][] = [],
+  ancestorGenes?: Genes,
   parentName?: string
 ): Orb {
-  const dna = ancestorDNA.length
-    ? getMutatedDNA(ancestorDNA)
-    : getRandomDNA()
+  const genes = ancestorGenes
+    ? getMutatedGenes(ancestorGenes)
+    : getRandomGenes()
 
-  const reactions = ancestorReactions.length
-    ? getMutatedReactions(ancestorReactions)
-    : getRandomReactions()
-
-  const orb = new Orb(x, y, hp, dna, reactions, parentName)
+  const orb = new Orb(x, y, hp, genes, parentName)
   orbs.push(orb)
 
   return orb
@@ -685,6 +1342,33 @@ function makeTurn(_turnNum: number) {
 }
 
 // ----- HELPERS -----
+
+function canEatOrb(consumer: Orb, prey: Orb): boolean {
+  return prey.hp < consumer.hp / 2
+}
+
+function computeBirthCost(parentHp: number, genes: Genes): {
+  childHp: number
+  tax: number
+  totalCost: number
+  costFraction: number
+} {
+  const childHp = Math.ceil(parentHp * genes.offspring_investment)
+  const tax = Math.ceil(parentHp * (birthTaxPercent / 100))
+  const totalCost = childHp + tax
+  const costFraction = totalCost / Math.max(parentHp, 1)
+  return { childHp, tax, totalCost, costFraction }
+}
+
+function canGiveBirth(orb: Orb): boolean {
+  const hpNorm = clamp(orb.hp / Math.max(orb.genes.hp_healthy_norm, 1), 0, 1)
+  const { totalCost } = computeBirthCost(orb.hp, orb.genes)
+  return (
+    hpNorm >= orb.genes.min_hp_to_divide &&
+    orb.reproductionCooldownRemaining <= 0 &&
+    orb.hp - totalCost > 0
+  )
+}
 
 function withinWorldBoundaries(x: number, y: number) {
   // x is column index (horizontal), y is row index (vertical)
@@ -770,12 +1454,10 @@ function getCellOrbs(x: number, y: number, excludeId: string | null = null) {
 }
 
 function removeWorldObject(obj: Orb) {
-  if (obj instanceof Orb) {
-    for (let i = 0; i < orbs.length; i++) {
-      if (orbs[i].id === obj.id) {
-        orbs.splice(i, 1)
-        return
-      }
+  for (let i = 0; i < orbs.length; i++) {
+    if (orbs[i].id === obj.id) {
+      orbs.splice(i, 1)
+      return
     }
   }
 }
@@ -788,91 +1470,54 @@ function getRandomId(length: number) {
   return str
 }
 
-// Generate a readable, deterministic name from DNA numbers
-function dnaToName(dna: number[], maxLen: number = 8): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz'
-  const letters: string[] = []
-  for (let i = 0; i < dna.length && letters.length < maxLen; i++) {
-    const n = dna[i]
-    letters.push(alphabet[n % 26])
+function getRandomGenes(): Genes {
+  const template = SPAWN_ARCHETYPES[spawnArchetypeCursor % SPAWN_ARCHETYPES.length] ?? DEFAULT_GENES
+  spawnArchetypeCursor += 1
+  return { ...template }
+}
+
+function getMutatedGenes(ancestor: Genes): Genes {
+  const next = { ...ancestor }
+  const mutationResilience = ancestor.mutation_resilience
+  const scale = 1 - mutationResilience
+  
+  // Mutate all keys
+  for (const key of Object.keys(next) as (keyof Genes)[]) {
+     if (key === 'mutation_resilience') continue 
+     if (key === 'reproduction_cooldown') {
+       const base = Math.round(Number(next[key]) || 0)
+       const delta = Math.round((Math.random() - 0.5) * 2 * 2 * scale)
+       next[key] = clamp(base + delta, 0, 10)
+       continue
+     }
+
+     const val = next[key]
+     // Mutate by +/- 20% scaled by resilience
+     const delta = (Math.random() - 0.5) * 2 * 0.2 * scale * val 
+     // Additive noise for small params
+     const additive = (Math.random() - 0.5) * 0.1 * scale
+     
+     let newVal = val + delta + additive
+     
+     if (
+        key.endsWith('_weight') ||
+        key === 'hp_healthy_norm' ||
+        key === 'max_energy_norm' ||
+        key.endsWith('_sensitivity') ||
+        key === 'attack_margin'
+      ) {
+        newVal = Math.max(0.1, newVal)
+     } else {
+        newVal = clamp(newVal, 0, 1)
+     }
+     
+     next[key] = newVal
   }
-  const base = letters.join('') || 'orb'
-  return base.charAt(0).toUpperCase() + base.slice(1)
-}
-
-function getRandomDNA() {
-  // return [ ...Array(dnaLength) ].map(() => getRandomOrbCommand())
-  return [ ...Array(dnaLength) ].map((_value, index) => {
-    if (
-      index % 3 === 0
-    ) {
-      return orbCommands.CONSUME_ENERGY
-    } else {
-      return getRandomOrbCommand()
-    }
-  })
-}
-
-function getRandomOrbCommand() {
-  // Choose from existing command IDs to avoid selecting removed IDs
-  const values = Object.values(orbCommands)
-  const idx = getRandomMinMax(0, values.length - 1)
-  return values[idx]
-}
-
-// Return a random command ID excluding any listed in `excludeIds`
-function getRandomOrbCommandExclude(excludeIds: number[] = []) {
-  const values = Object.values(orbCommands)
-  const allowed = values.filter(id => !excludeIds.includes(id))
-  if (allowed.length === 0) {
-    // Fallback to a safe no-op if everything was excluded
-    return orbCommands.STAY_IDLE
-  }
-  const idx = getRandomMinMax(0, allowed.length - 1)
-  return allowed[idx]
-}
-
-function getMutatedDNA(ancestorDNA: number[]) {
-  const newDNA = [ ...ancestorDNA ]
-
-  const randomIndex = getRandomMinMax(0, newDNA.length - 1)
-  newDNA[randomIndex] = getRandomOrbCommand()
-
-  return newDNA
-}
-
-// Mutate one random cell in the reactions matrix
-function getMutatedReactions(ancestorReactions: number[][]) {
-  // Deep copy matrix
-  const newReactions = ancestorReactions.map(row => [ ...row ])
-
-  // Pick a random cell to mutate
-  const dirIndex = getRandomMinMax(0, reactionDirectionsLength - 1)
-  const signalIndex = getRandomMinMax(0, reactionsLength - 1)
-
-  const exclude = [
-    orbCommands.WATCH_LEFT,
-    orbCommands.WATCH_RIGHT,
-    orbCommands.WATCH_TOP,
-    orbCommands.WATCH_BOTTOM
-  ]
-  newReactions[dirIndex][signalIndex] = getRandomOrbCommandExclude(exclude)
-
-  return newReactions
-}
-
-// Generate a random reactions matrix
-function getRandomReactions() {
-  const exclude = [
-    orbCommands.WATCH_LEFT,
-    orbCommands.WATCH_RIGHT,
-    orbCommands.WATCH_TOP,
-    orbCommands.WATCH_BOTTOM
-  ]
-  // Build a matrix: rows = directions, cols = signal categories
-  return Array.from({ length: reactionDirectionsLength }, () => (
-    Array.from({ length: reactionsLength }, () => getRandomOrbCommandExclude(exclude))
-  ))
+  
+  // Mutate resilience
+  next.mutation_resilience = clamp(next.mutation_resilience + (Math.random() - 0.5) * 0.1, 0, 1)
+  
+  return next
 }
 
 // Death reasons and per-generation stats
@@ -901,6 +1546,7 @@ let deathStatsPerGeneration: GenerationStats[] = []
 let forceRerender: (() => void) | null = null
 // Strongest (oldest) orbs saved per generation for later viewing
 let strongestOrbsPerGeneration: Orb[][] = []
+let selectedOrbIdForDebug: string | null = null
 
 function startNewGeneration() {
   currentGeneration += 1
@@ -981,108 +1627,133 @@ function App() {
   const [ worldNum, setWorldNum ] = useState(0)
   const [ turnDuration, setTurnDuration ] = useState(initialTurnDuration)
   const [ selectedOrb, setSelectedOrb ] = useState<Orb | null>(null)
-  const [ paused, setPaused ] = useState(false)
+  const [ paused, setPaused ] = useState(true)
   const [ activeGenTab, setActiveGenTab ] = useState(0)
   const [ showSettings, setShowSettings ] = useState(false)
   const [ draftSettings, setDraftSettings ] = useState<Settings>(settings)
-
-  // ---- Orb Generator state ----
-  type SavedOrb = {
-    id: string
-    name: string
-    dna: number[]
-    reactions: number[][]
-  }
-
-  const SAVED_ORBS_KEY = 'saved_orbs_v1'
-
-  function normalizeDna(dna: number[], len: number = dnaLength): number[] {
-    const base = Array.from({ length: len }, (_v, i) => dna[i] ?? orbCommands.STAY_IDLE)
-    return base.slice(0, len)
-  }
-
-  function normalizeReactions(reactions: number[][]): number[][] {
-    const rows = reactionDirectionsLength
-    const cols = reactionsLength
-    const out: number[][] = []
-    for (let r = 0; r < rows; r++) {
-      const row = reactions[r] ?? []
-      const normRow = Array.from({ length: cols }, (_v, i) => row[i] ?? orbCommands.STAY_IDLE).slice(0, cols)
-      out.push(normRow)
-    }
-    return out
-  }
-
-  function getColorFromDNA(dna: number[]) {
-    const greens = dna.reduce((sum, item) => item === orbCommands.CONSUME_ENERGY ? sum + item : sum, 0)
-    const reds = dna.reduce((sum, item) => ([ orbCommands.BITE_LEFT, orbCommands.BITE_RIGHT, orbCommands.BITE_UP, orbCommands.BITE_DOWN ].includes(item) ? sum + item : sum), 0)
-    return { reds, greens }
-  }
-
-  const [ savedOrbs, setSavedOrbs ] = useState<SavedOrb[]>(() => {
-    try {
-      const raw = localStorage.getItem(SAVED_ORBS_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      if (!Array.isArray(parsed)) return []
-      return parsed.map((o: any) => ({
-        id: String(o.id ?? getRandomId(idLength)),
-        name: String(o.name ?? dnaToName(normalizeDna(Array.isArray(o.dna) ? o.dna : []))),
-        dna: normalizeDna(Array.isArray(o.dna) ? o.dna : []),
-        reactions: normalizeReactions(Array.isArray(o.reactions) ? o.reactions : [])
-      })) as SavedOrb[]
-    } catch {
-      return []
-    }
-  })
+  const [ showShortcuts, setShowShortcuts ] = useState(false)
 
   useEffect(() => {
-    try {
-      localStorage.setItem(SAVED_ORBS_KEY, JSON.stringify(savedOrbs))
-    } catch {}
-  }, [ savedOrbs ])
+    selectedOrbIdForDebug = selectedOrb?.id ?? null
+  }, [selectedOrb])
 
-  const [ showOrbGenerator, setShowOrbGenerator ] = useState(false)
-  const [ editingOrbId, setEditingOrbId ] = useState<string | null>(null)
-  const [ genDNA, setGenDNA ] = useState<number[]>(normalizeDna(getRandomDNA()))
-  const [ genReactions, setGenReactions ] = useState<number[][]>(normalizeReactions(getRandomReactions()))
-  const [ genHP, setGenHP ] = useState<number>(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
-
-  function openOrbGenerator(existing?: SavedOrb) {
-    setPaused(true)
-    if (existing) {
-      setEditingOrbId(existing.id)
-      setGenDNA(normalizeDna(existing.dna))
-      setGenReactions(normalizeReactions(existing.reactions))
-      setGenHP(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
-    } else {
-      setEditingOrbId(null)
-      setGenDNA(normalizeDna(getRandomDNA()))
-      setGenReactions(normalizeReactions(getRandomReactions()))
-      setGenHP(getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))
-    }
-    setShowOrbGenerator(true)
+  // Helper to visualize genes
+  function renderGenesTable(genes: Genes) {
+     return (
+       <div className="genes-table" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '10px' }}>
+         {Object.entries(genes).map(([k, v]) => (
+           <React.Fragment key={k}>
+             <div title={k} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{k}</div>
+             <div style={{ textAlign: 'right' }}>{v.toFixed(2)}</div>
+           </React.Fragment>
+         ))}
+       </div>
+     )
   }
 
-  function saveGeneratedOrb() {
-    const dnaNorm = normalizeDna(genDNA)
-    const reactNorm = normalizeReactions(genReactions)
-    const name = dnaToName(dnaNorm)
-    if (editingOrbId) {
-      setSavedOrbs(prev => prev.map(o => o.id === editingOrbId ? { ...o, name, dna: dnaNorm, reactions: reactNorm } : o))
-    } else {
-      const id = getRandomId(idLength)
-      setSavedOrbs(prev => [ ...prev, { id, name, dna: dnaNorm, reactions: reactNorm } ])
+  function renderMotivationsTable(m: OrbMotivations | null) {
+    if (!m) {
+      return <div className="empty">No snapshot yet</div>
     }
-    setShowOrbGenerator(false)
-    setEditingOrbId(null)
+    const rows: Array<[string, number]> = [
+      ['hunger', m.hunger],
+      ['fear', m.fear],
+      ['aggression', m.aggression],
+      ['reproduction', m.reproduction],
+      ['exploration', m.exploration],
+    ]
+    const meta: Array<[string, number]> = [
+      ['hp_norm', m.hpNorm],
+      ['risk_drive', m.riskDrive],
+      ['fear_effective', m.fearEffective],
+      ['max_threat', m.maxThreat],
+      ['max_prey', m.maxPrey],
+    ]
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '10px' }}>
+        {rows.map(([k, v]) => (
+          <React.Fragment key={k}>
+            <div>{k}</div>
+            <div style={{ textAlign: 'right' }}>{v.toFixed(2)}</div>
+          </React.Fragment>
+        ))}
+        <div style={{ gridColumn: '1 / -1', opacity: 0.7, marginTop: 6 }}>derived</div>
+        {meta.map(([k, v]) => (
+          <React.Fragment key={k}>
+            <div style={{ opacity: 0.85 }}>{k}</div>
+            <div style={{ textAlign: 'right', opacity: 0.85 }}>{v.toFixed(2)}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    )
   }
 
-  function spawnFromConfig(dna: number[], reactions: number[][], hp: number) {
-    const [ x, y ] = getRandomEmptyCell()
-    spawnOrb(x, y, hp, dna, reactions)
-    setSelectedOrb(null)
-    forceRerender?.()
+  function renderPerceptionGrid(perception: PerceivedCell[], radius: number, maxEnergyNorm: number) {
+    const size = radius * 2 + 1
+    const map = new Map(perception.map(c => [`${c.dx},${c.dy}`, c] as const))
+    return (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${size}, minmax(56px, 1fr))`,
+          gap: 4,
+          fontSize: 10
+        }}
+      >
+        {Array.from({ length: size * size }).map((_v, i) => {
+          const dx = (i % size) - radius
+          const dy = Math.floor(i / size) - radius
+          const cell = map.get(`${dx},${dy}`) ?? null
+          const isCenter = dx === 0 && dy === 0
+          const inBounds = cell?.inBounds ?? false
+          const energyNorm = cell ? clamp(cell.energy / Math.max(maxEnergyNorm, 1), 0, 1) : 0
+          const bg = !inBounds
+            ? 'rgba(0,0,0,0.04)'
+            : `rgba(${Math.floor((cell?.threat ?? 0) * 255)}, ${Math.floor(energyNorm * 200)}, ${Math.floor((cell?.prey ?? 0) * 255)}, 0.15)`
+          const title = cell
+            ? `(${cell.x},${cell.y}) d=(${dx},${dy}) energy=${cell.energy} threat=${cell.threat.toFixed(2)} prey=${cell.prey.toFixed(2)} density=${cell.localDensity.toFixed(2)} occupied=${cell.occupied}`
+            : `d=(${dx},${dy})`
+          return (
+            <div
+              key={`${dx},${dy}`}
+              title={title}
+              style={{
+                border: isCenter ? '2px solid rgba(0,0,0,0.7)' : '1px solid rgba(0,0,0,0.15)',
+                borderRadius: 6,
+                padding: 6,
+                background: bg,
+                minHeight: 56
+              }}
+            >
+              {!cell ? (
+                <div style={{ opacity: 0.6 }}>n/a</div>
+              ) : !cell.inBounds ? (
+                <div style={{ opacity: 0.6 }}>out</div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ opacity: 0.75 }}>{dx},{dy}</div>
+                    <div style={{ opacity: 0.75 }}>{cell.energy}</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div>T</div>
+                    <div>{cell.threat.toFixed(2)}</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div>P</div>
+                    <div>{cell.prey.toFixed(2)}</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.75 }}>
+                    <div>D</div>
+                    <div>{cell.localDensity.toFixed(2)}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   const aliveOrbsCount: number = orbs.filter(orb => orb.hp > 0).length
@@ -1091,6 +1762,101 @@ function App() {
     setTurn(turn => turn + 1)
     makeTurn(turn)
   }
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false
+      if (target.isContentEditable) return true
+      const tag = target.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) {
+        return
+      }
+
+      if (
+        e.repeat &&
+        (e.code === 'Space' ||
+          e.code === 'BracketRight' ||
+          e.code === 'KeyG' ||
+          e.code === 'KeyR' ||
+          e.code === 'KeyN' ||
+          e.code === 'KeyS')
+      ) {
+        return
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        setPaused(p => !p)
+        return
+      }
+
+      if (e.code === 'Equal') {
+        e.preventDefault()
+        setTurnDuration(d => Math.max(1, d - 10))
+        return
+      }
+
+      if (e.code === 'Minus') {
+        e.preventDefault()
+        setTurnDuration(d => Math.min(500, d + 10))
+        return
+      }
+
+      if (e.code === 'BracketRight') {
+        e.preventDefault()
+        setPaused(true)
+        triggerTurn()
+        return
+      }
+
+      if (e.code === 'KeyG') {
+        e.preventDefault()
+        setGraphicsEnabled(prev => {
+          const next = !prev
+          const nextSettings: Settings = { ...settings, graphicEffects: next }
+          saveSettings(nextSettings)
+          return next
+        })
+        return
+      }
+
+      if (e.code === 'KeyR') {
+        e.preventDefault()
+        setPaused(true)
+        setSelectedOrb(null)
+        setWorldNum(0)
+        setTurn(0)
+        generateWorld()
+        return
+      }
+
+      if (e.code === 'KeyN') {
+        e.preventDefault()
+        setPaused(true)
+        setSelectedOrb(null)
+        generateWorld()
+        setTurn(0)
+        return
+      }
+
+      if (e.code === 'KeyS') {
+        e.preventDefault()
+        if (showSettings) {
+          setShowSettings(false)
+        } else {
+          setPaused(true)
+          setShowSettings(true)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showSettings])
 
   function trackWorldStats() {
     if (deathStatsPerGeneration.length > 0 && currentGeneration > 0) {
@@ -1155,8 +1921,12 @@ function App() {
   ])
 
   function showOrbStory(orb: Orb) {
+    orb.refreshSnapshot(scanRadius)
     setSelectedOrb(orb)
   }
+
+  const worldPixelWidth = worldSize[1] * cellSize + (worldSize[1] - 1) * cellGap
+  const worldPixelHeight = worldSize[0] * cellSize + (worldSize[0] - 1) * cellGap
 
   return (
     <>
@@ -1175,6 +1945,8 @@ function App() {
           <button
             disabled={turn === 0}
             onClick={() => {
+              setPaused(true)
+              setSelectedOrb(null)
               setWorldNum(0)
               setTurn(0)
               generateWorld()
@@ -1215,6 +1987,8 @@ function App() {
           <button
             disabled={turn === 0}
             onClick={() => {
+              setPaused(true)
+              setSelectedOrb(null)
               generateWorld()
               setTurn(0)
             }}
@@ -1245,624 +2019,444 @@ function App() {
           >
             ⚙️
           </button>
-          <button
-            onClick={() => openOrbGenerator()}
-            title="Generate orb"
-          >
-            🔮 Generate Orb
-          </button>
         </div>
       </div>
 
       <div className="content">
-        <div className="world">
-          <div
-            className="grid field"
-            style={{
-              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`
-            }}
-          >
-            {world.map((row: number[], rowIndex: any) => (
-              row.map((_value: number, colIndex: any) => (
-                <div
-                  key={`cell-${rowIndex}-${colIndex}`}
-                  className="cell"
-                />
-              ))
-            ))}
-          </div>
-          <div
-            className="orbs-layer"
-            style={{
-              width: `${worldSize[1] * cellSize + (worldSize[1] - 1) * cellGap}px`,
-              height: `${worldSize[0] * cellSize + (worldSize[0] - 1) * cellGap}px`
-            }}
-          >
-            {orbs.filter(o => o.hp > 0).map((orb) => {
-              const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
-              const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
-              return (
-                <div
-                  key={orb.id}
-                  id={`orb-${orb.id}`}
-                  className={`orb ${orb.glow}`}
-                  style={{
-                    backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, 0)`,
-                    transform: `translate(${left}px, ${top}px)`
-                  }}
-                  onClick={() => showOrbStory(orb)}
-                >
-                  {orb.hp}
-                </div>
-              )
-            })}
-          </div>
-          <div
-            className="grid energy-layer"
-            style={{
-              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`
-            }}
-          >
-            {world.map((row: number[], rowIndex: any) => (
-              row.map((_value: number, colIndex: any) => (
-                <div
-                  key={`cell-${rowIndex}-${colIndex}`}
-                  className="cell"
-                >
-                  {worldEnergy[rowIndex]?.[colIndex] > 0 && (
-                    <div
-                      className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
-                    >
-                      {worldEnergy[rowIndex][colIndex]}
-                    </div>
-                  )}
-                </div>
-              ))
-            ))}
-          </div>
-        </div>
+        {selectedOrb && (
+          <div className="orb-story">
+            <div className="orb-story__header">
+              <div>{selectedOrb.name}</div>
+              <button onClick={() => setSelectedOrb(null)}>⤫</button>
+            </div>
+            <div className="commands-section">
+              <div className="commands-title">
+                Genes
+              </div>
+              {renderGenesTable(selectedOrb.genes)}
+            </div>
 
-        <div className="right-panel">
-          <div className="gen-tabs">
-            <button
-              onClick={() => setActiveGenTab(0)}
-              disabled={activeGenTab === 0}
-            >
-              first
-            </button>
-            <button
-              onClick={() => setActiveGenTab(Math.max(0, activeGenTab - 1))}
-              disabled={activeGenTab === 0}
-            >
-              &lt;
-            </button>
-            <input
-              type="number"
-              min={1}
-              max={Math.max(1, deathStatsPerGeneration.length)}
-              value={Math.min(Math.max(1, activeGenTab + 1), Math.max(1, deathStatsPerGeneration.length))}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                if (Number.isNaN(v)) return
-                const clamped = Math.max(1, Math.min(v, Math.max(1, deathStatsPerGeneration.length)))
-                setActiveGenTab(clamped - 1)
-              }}
-            />
-            <button
-              onClick={() => setActiveGenTab(Math.min(deathStatsPerGeneration.length - 1, activeGenTab + 1))}
-              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
-            >
-              &gt;
-            </button>
-            <button
-              onClick={() => setActiveGenTab(Math.max(0, deathStatsPerGeneration.length - 1))}
-              disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
-            >
-              last
-            </button>
-          </div>
-          <div className="gen-tab-content">
-            {(() => {
-              const stats = deathStatsPerGeneration[activeGenTab] || {
-                reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
-                turns: 0,
-                highestAge: 0,
-                energyStart: 0,
-                births: 0,
-                consumedEnergy: 0,
-                hpGainedFromEating: 0,
-                hpGainedFromConsumingEnergy: 0
-              }
-              return (
-                <ul>
-                  <li>turns: {stats.turns}</li>
-                  <li>highest_age: {stats.highestAge}</li>
-                  <li>energy_start: {stats.energyStart}</li>
-                  <li>births: {stats.births}</li>
-                  <li>consumed_energy: {stats.consumedEnergy}</li>
-                  <li>hp_gained_consuming_energy: {stats.hpGainedFromConsumingEnergy}</li>
-                  <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
-                  <li>eaten: {stats.reasons.eaten}</li>
-                  <li>out_of_world: {stats.reasons.out_of_world}</li>
-                  <li>no_hp: {stats.reasons.no_hp}</li>
-                </ul>
-              )
-            })()}
-            <div className="strongest-orbs-section">
-              <div className="strongest-orbs-title">Strongest Orbs</div>
-              <div className="saved-orbs-grid">
-                {((strongestOrbsPerGeneration[activeGenTab] || []) as Orb[]).length > 0 ? (
-                  strongestOrbsPerGeneration[activeGenTab].map((orb, idx) => {
-                    const color = orb.getColor()
-                    return (
+            <div className="commands-section">
+              <div className="commands-title">
+                Motivations
+              </div>
+              {renderMotivationsTable(selectedOrb.lastMotivations)}
+            </div>
+
+            <div className="commands-section">
+              <div className="commands-title">
+                Surroundings
+              </div>
+              {selectedOrb.lastPerception.length > 0 ? (
+                renderPerceptionGrid(
+                  selectedOrb.lastPerception,
+                  selectedOrb.lastScanRadius || scanRadius,
+                  selectedOrb.genes.max_energy_norm
+                )
+              ) : (
+                <div className="empty">No snapshot yet</div>
+              )}
+            </div>
+
+            <div className="commands-section">
+              <div className="commands-title">My Story</div>
+              <div className="log-column">
+                {selectedOrb.log.map((turnItems, turnIndex) => (
+                  <div
+                    key={`log-col-${turnIndex}`}
+                    className="log-row"
+                    title={`Turn ${turnIndex}`}
+                  >
+                    <div
+                      key={`log-${turnIndex}-index`}
+                      className="log-block"
+                    >
+                      {turnIndex}
+                    </div>
+                    {turnItems.map((entry, entryIndex) => (
                       <div
-                        key={`saved-orb-${activeGenTab}-${idx}-${orb.id}`}
-                        className="saved-orb"
-                        title={`Age: ${orb.age}`}
-                        onClick={() => showOrbStory(orb)}
+                        key={`log-${turnIndex}-${entryIndex}`}
+                        className="log-block"
+                        style={{ minWidth: 'auto', padding: '0 4px' }}
                       >
-                        <div
-                          className="saved-orb-circle"
-                          style={{ backgroundColor: `rgb(${color.reds}, ${color.greens}, 0)` }}
-                        />
-                        <div className="saved-orb-id">{orb.name}</div>
-                        <div className="saved-orb-age">age: {orb.age}</div>
+                        {entry}
                       </div>
-                    )
-                  })
-                ) : (
-                  <div className="saved-orbs-empty">No strongest orbs saved yet.</div>
-                )}
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
-            {/* Saved Orbs moved to a dedicated bottom panel */}
           </div>
-          <div className="gen-chart">
-            {(() => {
-              const gens = deathStatsPerGeneration
-              if (!gens || gens.length === 0) {
-                return <div className="empty">No data yet</div>
-              }
-              const labels = gens.map((_s, idx) => `Gen ${idx + 1}`)
-              const data: ChartData<'line'> = {
-                labels,
-                datasets: [
-                  {
-                    label: 'turns',
-                    data: gens.map(s => s.turns),
-                    borderColor: '#4ea1f3',
-                    backgroundColor: 'rgba(78, 161, 243, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'highest_age',
-                    data: gens.map(s => s.highestAge),
-                    borderColor: '#f39c12',
-                    backgroundColor: 'rgba(243, 156, 18, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'energy_start',
-                    data: gens.map(s => s.energyStart),
-                    borderColor: '#3498db',
-                    backgroundColor: 'rgba(52, 152, 219, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'hp_gained_eating',
-                    data: gens.map(s => s.hpGainedFromEating),
-                    borderColor: '#f1c40f',
-                    backgroundColor: 'rgba(241, 196, 15, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'hp_gained_consuming_energy',
-                    data: gens.map(s => s.hpGainedFromConsumingEnergy),
-                    borderColor: '#8e44ad',
-                    backgroundColor: 'rgba(142, 68, 173, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'births',
-                    data: gens.map(s => s.births),
-                    borderColor: '#1abc9c',
-                    backgroundColor: 'rgba(26, 188, 156, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'consumed_energy',
-                    data: gens.map(s => s.consumedEnergy),
-                    borderColor: '#2ecc71',
-                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'eaten',
-                    data: gens.map(s => s.reasons.eaten),
-                    borderColor: '#e74c3c',
-                    backgroundColor: 'rgba(231, 76, 60, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'out_of_world',
-                    data: gens.map(s => s.reasons.out_of_world),
-                    borderColor: '#9b59b6',
-                    backgroundColor: 'rgba(155, 89, 182, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  },
-                  {
-                    label: 'no_hp',
-                    data: gens.map(s => s.reasons.no_hp),
-                    borderColor: '#2ecc71',
-                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
-                    tension: 0.2,
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    fill: false
-                  }
-                ]
-              }
-              const options: ChartOptions<'line'> = {
-                responsive: true,
-                maintainAspectRatio: false,
-                ...(graphicsEnabled ? {} : { animation: false }),
-                plugins: {
-                  legend: { position: 'bottom' },
-                  title: { display: false }
-                },
-                scales: {
-                  x: { title: { display: false } },
-                  y: { beginAtZero: true }
-                }
-              }
-              return <Line data={data} options={options}/>
-            })()}
-          </div>
-          <div className="gen-top-bottom">
-            {(() => {
-              const gens = deathStatsPerGeneration
-              if (!gens || gens.length === 0) {
-                return <div className="empty">No data yet</div>
-              }
-              const metrics = [
-                { key: 'turns', label: 'turns', getter: (s: GenerationStats) => s.turns },
-                { key: 'highest_age', label: 'highest_age', getter: (s: GenerationStats) => s.highestAge },
-                { key: 'energy_start', label: 'energy_start', getter: (s: GenerationStats) => s.energyStart },
-                { key: 'births', label: 'births', getter: (s: GenerationStats) => s.births },
-                { key: 'consumed_energy', label: 'consumed_energy', getter: (s: GenerationStats) => s.consumedEnergy },
-                { key: 'hp_gained_eating', label: 'hp_gained_eating', getter: (s: GenerationStats) => s.hpGainedFromEating },
-                { key: 'hp_gained_consuming_energy', label: 'hp_gained_consuming_energy', getter: (s: GenerationStats) => s.hpGainedFromConsumingEnergy },
-                { key: 'eaten', label: 'eaten', getter: (s: GenerationStats) => s.reasons.eaten },
-                { key: 'out_of_world', label: 'out_of_world', getter: (s: GenerationStats) => s.reasons.out_of_world },
-                { key: 'no_hp', label: 'no_hp', getter: (s: GenerationStats) => s.reasons.no_hp }
-              ]
-              const computeTopBottom = (values: number[]) => {
-                const pairs = values.map((v, i) => ({ i, v }))
-                const count = Math.min(5, pairs.length)
-                const top = [...pairs].sort((a, b) => b.v - a.v).slice(0, count)
-                const bottom = [...pairs].sort((a, b) => a.v - b.v).slice(0, count)
-                return { top, bottom }
-              }
-              return (
-                <div>
-                  <div className="strongest-orbs-title">Top 5 / Bottom 5 by stat</div>
-                  {metrics.map(m => {
-                    const values = gens.map(m.getter)
-                    const { top, bottom } = computeTopBottom(values)
-                    return (
-                      <div key={`metric-${m.key}`} className="metric-block">
-                        <div className="metric-name">{m.label}</div>
-                        <div className="metric-lists">
-                          <div className="metric-list">
-                            <div className="list-title">most</div>
-                            <ul>
-                              {top.map(p => (
-                                <li key={`${m.key}-top-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div className="metric-list">
-                            <div className="list-title">least</div>
-                            <ul>
-                              {bottom.map(p => (
-                                <li key={`${m.key}-bottom-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
-          </div>
+        )}
 
-        </div>
-      </div>
-
-      {selectedOrb && (
-        <div className="orb-story">
-          <div className="orb-story__header">
-            <div>{selectedOrb.name}</div>
-            <button onClick={() => setSelectedOrb(null)}>⤫</button>
-          </div>
-          <div className="commands-section">
-            <div className="commands-title">
-              Reactions Matrix
-            </div>
-            <div className="reactions-matrix">
-              {(() => {
-                const directionLabels = [ 'Left', 'Right', 'Top', 'Bottom' ]
-                const signalLabels = [
-                  'Out of world',
-                  'Energy',
-                  'Empty',
-                  'Smaller orb',
-                  'Bigger orb'
-                ]
-                return (
-                  <>
-                    {/* Header row aligned to the same grid columns */}
-                    <div className="reactions-row-title">
-                      Signals
-                    </div>
-                    {signalLabels.map((label, idx) => (
-                      <div
-                        key={`sig-${idx}`}
-                        className="signal-label"
-                        title={label}
-                      >
-                        {label}
-                      </div>
-                    ))}
-
-                    {/* Direction rows: label + 5 cells */}
-                    {selectedOrb.reactions.map((row, dirIndex) => (
-                      <>
-                        <div key={`dir-${dirIndex}`} className="reactions-row-title">
-                          {directionLabels[dirIndex]}
-                        </div>
-                        {row.map((id, colIndex) => {
-                          const info = orbCommandsInfo[id]
-                          const title = `${signalLabels[colIndex]} → ${info?.label ?? id}`
-                          return (
-                            <div
-                              key={`r-cell-${dirIndex}-${colIndex}`}
-                              className="command-icon"
-                              title={title}
-                            >
-                              {info?.icon ?? '❔'}
-                            </div>
-                          )
-                        })}
-                      </>
-                    ))}
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-
-          <div className="commands-section">
-            <div className="commands-title">
-              DNA
-            </div>
-            <div className="commands-list">
-              {selectedOrb.dna.map((id, index) => {
-                const info = orbCommandsInfo[id]
-                return (
-                  <div
-                    key={`dna-${index}`}
-                    className="command-icon"
-                    title={info?.label ?? String(id)}
-                  >
-                    {info?.icon ?? '❔'}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="commands-section">
-            <div className="commands-title">My Story</div>
-            <div className="log-column">
-              {selectedOrb.log.map((turnItems, turnIndex) => (
-                <div
-                  key={`log-col-${turnIndex}`}
-                  className="log-row"
-                  title={`Turn ${turnIndex}`}
-                >
-                  <div
-                    key={`log-${turnIndex}-index`}
-                    className="log-block"
-                  >
-                    {turnIndex}
-                  </div>
-                  {turnItems.map((entry, entryIndex) => (
-                    <div
-                      key={`log-${turnIndex}-${entryIndex}`}
-                      className="command-icon log-block"
-                    >
-                      {entry}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom panels: Saved Orbs in a dedicated section */}
-      <div className="bottom-panels">
-        <SavedOrbs
-          title="Saved Orbs"
-          savedOrbs={savedOrbs}
-          getColorFromDNA={getColorFromDNA}
-          onSpawn={(o) => spawnFromConfig(o.dna, o.reactions, getRandomMinMax(initialOrbHP[0], initialOrbHP[1]))}
-          onEdit={(o) => openOrbGenerator(o)}
-          onDelete={(id) => setSavedOrbs(prev => prev.filter(x => x.id !== id))}
-        />
-      </div>
-
-      {showOrbGenerator && (
-        <div className="orb-generator-panel">
-          <div className="orb-generator-header">
-            <div>{editingOrbId ? 'Edit Orb' : 'Orb Generator'}</div>
-            <button onClick={() => { setShowOrbGenerator(false); setEditingOrbId(null) }}>⤫</button>
-          </div>
-          <div className="orb-generator-content">
-            <div className="settings-row">
-              <label>Spawn HP</label>
-              <input
-                className="settings-input"
-                type="number"
-                min={1}
-                value={genHP}
-                onChange={(e) => setGenHP(Math.max(1, Number(e.target.value)))}
-              />
-            </div>
-
-            <div className="generator-section-title">DNA</div>
-            <div className="dna-editor">
-              {genDNA.map((val, idx) => (
-                <select
-                  key={`dna-edit-${idx}`}
-                  className="settings-input"
-                  value={val}
-                  onChange={(e) => {
-                    const v = Number(e.target.value)
-                    setGenDNA(cur => {
-                      const next = [ ...cur ]
-                      next[idx] = v
-                      return next
-                    })
-                  }}
-                >
-                  {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
-                    const id = Number(idStr)
-                    return (
-                      <option key={`dna-opt-${idx}-${id}`} value={id}>{info.icon} {info.label}</option>
-                    )
-                  })}
-                </select>
-              ))}
-            </div>
-
-            <div className="generator-section-title">Reactions</div>
-            {(() => {
-              const directionLabels = [ 'Left', 'Right', 'Top', 'Bottom' ]
-              const signalLabels = [ 'Out of world', 'Energy', 'Empty', 'Smaller orb', 'Bigger orb' ]
-              return (
-                <div className="reaction-editor">
-                  <div className="sig-label">Signals</div>
-                  {signalLabels.map((label, idx) => (
-                    <div
-                      key={`gen-sig-${idx}`}
-                      className="sig-label"
-                    >
-                      {label}
-                    </div>
-                  ))}
-
-                  {genReactions.map((row, dirIndex) => (
-                    <>
-                      <div
-                        key={`gen-dir-${dirIndex}`}
-                        className="dir-label"
-                      >
-                        {directionLabels[dirIndex]}
-                      </div>
-                      {row.map((cell, colIndex) => (
-                        <select
-                          key={`gen-r-cell-${dirIndex}-${colIndex}`}
-                          className="settings-input"
-                          value={cell}
-                          onChange={(e) => {
-                            const id = Number(e.target.value)
-                            setGenReactions(cur => {
-                              return cur.map((r, rIdx) => {
-                                return rIdx !== dirIndex
-                                  ? r
-                                  : r.map((c, cIdx) => {
-                                    return cIdx !== colIndex
-                                      ? c
-                                      : id
-                                  })
-                              })
-                            })
-                          }}
-                        >
-                          {Object.entries(orbCommandsInfo).map(([ idStr, info ]) => {
-                            const id = Number(idStr)
-                            return (
-                              <option
-                                key={`gen-r-opt-${dirIndex}-${colIndex}-${id}`}
-                                value={id}
-                              >
-                                {info.icon} {info.label}
-                              </option>
-                            )
-                          })}
-                        </select>
-                      ))}
-                    </>
-                  ))}
-                </div>
-              )
-            })()}
-
-            <div className="settings-actions">
-              <button
-                onClick={() => saveGeneratedOrb()}
-                title="Save orb"
-              >
-                💾 Save
-              </button>
-              <button
-                onClick={() => {
-                  spawnFromConfig(normalizeDna(genDNA), normalizeReactions(genReactions), genHP)
-                  setShowOrbGenerator(false)
-                  setEditingOrbId(null)
+        <div className="world-wrap">
+          <div className="world-scroll">
+            <div
+              className="world"
+              style={{
+                width: `${worldPixelWidth}px`,
+                height: `${worldPixelHeight}px`
+              }}
+            >
+              <div
+                className="grid field"
+                style={{
+                  gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+                  gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+                  width: `${worldPixelWidth}px`,
+                  height: `${worldPixelHeight}px`
                 }}
-                title="Spawn orb"
               >
-                🪄 Spawn
-              </button>
+                {world.map((row: number[], rowIndex: any) => (
+                  row.map((_value: number, colIndex: any) => (
+                    <div
+                      key={`cell-${rowIndex}-${colIndex}`}
+                      className="cell"
+                    />
+                  ))
+                ))}
+              </div>
+              <div
+                className="orbs-layer"
+                style={{
+                  width: `${worldPixelWidth}px`,
+                  height: `${worldPixelHeight}px`
+                }}
+              >
+                {orbs.filter(o => o.hp > 0).map((orb) => {
+                  const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
+                  const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
+                  const isSelected = selectedOrb?.id === orb.id
+                  return (
+                    <div
+                      key={orb.id}
+                      id={`orb-${orb.id}`}
+                      className={`orb ${orb.glow} ${isSelected ? 'selected' : ''}`}
+                      style={{
+                        backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, ${orb.getColor().blues})`,
+                        transform: `translate(${left}px, ${top}px)`
+                      }}
+                      onClick={() => showOrbStory(orb)}
+                    >
+                      {orb.hp}
+                    </div>
+                  )
+                })}
+              </div>
+              <div
+                className="grid energy-layer"
+                style={{
+                  gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+                  gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+                  width: `${worldPixelWidth}px`,
+                  height: `${worldPixelHeight}px`
+                }}
+              >
+                {world.map((row: number[], rowIndex: any) => (
+                  row.map((_value: number, colIndex: any) => (
+                    <div
+                      key={`cell-${rowIndex}-${colIndex}`}
+                      className="cell"
+                    >
+                      {worldEnergy[rowIndex]?.[colIndex] > 0 && (
+                        <div
+                          className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
+                        >
+                          {worldEnergy[rowIndex][colIndex]}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
+
+      <div className="bottom-panels">
+        <div className="gen-tabs">
+          <button
+            onClick={() => setActiveGenTab(0)}
+            disabled={activeGenTab === 0}
+          >
+            first
+          </button>
+          <button
+            onClick={() => setActiveGenTab(Math.max(0, activeGenTab - 1))}
+            disabled={activeGenTab === 0}
+          >
+            &lt;
+          </button>
+          <input
+            type="number"
+            min={1}
+            max={Math.max(1, deathStatsPerGeneration.length)}
+            value={Math.min(Math.max(1, activeGenTab + 1), Math.max(1, deathStatsPerGeneration.length))}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isNaN(v)) return
+              const clamped = Math.max(1, Math.min(v, Math.max(1, deathStatsPerGeneration.length)))
+              setActiveGenTab(clamped - 1)
+            }}
+          />
+          <button
+            onClick={() => setActiveGenTab(Math.min(deathStatsPerGeneration.length - 1, activeGenTab + 1))}
+            disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+          >
+            &gt;
+          </button>
+          <button
+            onClick={() => setActiveGenTab(Math.max(0, deathStatsPerGeneration.length - 1))}
+            disabled={activeGenTab >= deathStatsPerGeneration.length - 1}
+          >
+            last
+          </button>
+        </div>
+        <div className="gen-tab-content">
+          {(() => {
+            const stats = deathStatsPerGeneration[activeGenTab] || {
+              reasons: { eaten: 0, out_of_world: 0, no_hp: 0 },
+              turns: 0,
+              highestAge: 0,
+              energyStart: 0,
+              births: 0,
+              consumedEnergy: 0,
+              hpGainedFromEating: 0,
+              hpGainedFromConsumingEnergy: 0
+            }
+            return (
+              <ul>
+                <li>turns: {stats.turns}</li>
+                <li>highest_age: {stats.highestAge}</li>
+                <li>energy_start: {stats.energyStart}</li>
+                <li>births: {stats.births}</li>
+                <li>consumed_energy: {stats.consumedEnergy}</li>
+                <li>hp_gained_consuming_energy: {stats.hpGainedFromConsumingEnergy}</li>
+                <li>hp_gained_eating: {stats.hpGainedFromEating}</li>
+                <li>eaten: {stats.reasons.eaten}</li>
+                <li>out_of_world: {stats.reasons.out_of_world}</li>
+                <li>no_hp: {stats.reasons.no_hp}</li>
+              </ul>
+            )
+          })()}
+          <div className="strongest-orbs-section">
+            <div className="strongest-orbs-title">Strongest Orbs</div>
+            <div className="saved-orbs-grid">
+              {((strongestOrbsPerGeneration[activeGenTab] || []) as Orb[]).length > 0 ? (
+                strongestOrbsPerGeneration[activeGenTab].map((orb, idx) => {
+                  const color = orb.getColor()
+                  return (
+                    <div
+                      key={`saved-orb-${activeGenTab}-${idx}-${orb.id}`}
+                      className="saved-orb"
+                      title={`Age: ${orb.age}`}
+                      onClick={() => showOrbStory(orb)}
+                    >
+                      <div
+                        className="saved-orb-circle"
+                        style={{ backgroundColor: `rgb(${color.reds}, ${color.greens}, ${color.blues})` }}
+                      />
+                      <div className="saved-orb-id">{orb.name}</div>
+                      <div className="saved-orb-age">age: {orb.age}</div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="saved-orbs-empty">No strongest orbs saved yet.</div>
+              )}
+            </div>
+          </div>
+          {/* Saved Orbs moved to a dedicated bottom panel */}
+        </div>
+        <div className="gen-chart">
+          {(() => {
+            const gens = deathStatsPerGeneration
+            if (!gens || gens.length === 0) {
+              return <div className="empty">No data yet</div>
+            }
+            const labels = gens.map((_s, idx) => `Gen ${idx + 1}`)
+            const data: ChartData<'line'> = {
+              labels,
+              datasets: [
+                {
+                  label: 'turns',
+                  data: gens.map(s => s.turns),
+                  borderColor: '#4ea1f3',
+                  backgroundColor: 'rgba(78, 161, 243, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'highest_age',
+                  data: gens.map(s => s.highestAge),
+                  borderColor: '#f39c12',
+                  backgroundColor: 'rgba(243, 156, 18, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'energy_start',
+                  data: gens.map(s => s.energyStart),
+                  borderColor: '#3498db',
+                  backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'hp_gained_eating',
+                  data: gens.map(s => s.hpGainedFromEating),
+                  borderColor: '#f1c40f',
+                  backgroundColor: 'rgba(241, 196, 15, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'hp_gained_consuming_energy',
+                  data: gens.map(s => s.hpGainedFromConsumingEnergy),
+                  borderColor: '#8e44ad',
+                  backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'births',
+                  data: gens.map(s => s.births),
+                  borderColor: '#1abc9c',
+                  backgroundColor: 'rgba(26, 188, 156, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'consumed_energy',
+                  data: gens.map(s => s.consumedEnergy),
+                  borderColor: '#2ecc71',
+                  backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'eaten',
+                  data: gens.map(s => s.reasons.eaten),
+                  borderColor: '#e74c3c',
+                  backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'out_of_world',
+                  data: gens.map(s => s.reasons.out_of_world),
+                  borderColor: '#9b59b6',
+                  backgroundColor: 'rgba(155, 89, 182, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                },
+                {
+                  label: 'no_hp',
+                  data: gens.map(s => s.reasons.no_hp),
+                  borderColor: '#2ecc71',
+                  backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                  tension: 0.2,
+                  borderWidth: 2,
+                  pointRadius: 2,
+                  fill: false
+                }
+              ]
+            }
+            const options: ChartOptions<'line'> = {
+              responsive: true,
+              maintainAspectRatio: false,
+              ...(graphicsEnabled ? {} : { animation: false }),
+              plugins: {
+                legend: { position: 'bottom' },
+                title: { display: false }
+              },
+              scales: {
+                x: { title: { display: false } },
+                y: { beginAtZero: true }
+              }
+            }
+            return <Line data={data} options={options}/>
+          })()}
+        </div>
+        <div className="gen-top-bottom">
+          {(() => {
+            const gens = deathStatsPerGeneration
+            if (!gens || gens.length === 0) {
+              return <div className="empty">No data yet</div>
+            }
+            const metrics = [
+              { key: 'turns', label: 'turns', getter: (s: GenerationStats) => s.turns },
+              { key: 'highest_age', label: 'highest_age', getter: (s: GenerationStats) => s.highestAge },
+              { key: 'energy_start', label: 'energy_start', getter: (s: GenerationStats) => s.energyStart },
+              { key: 'births', label: 'births', getter: (s: GenerationStats) => s.births },
+              { key: 'consumed_energy', label: 'consumed_energy', getter: (s: GenerationStats) => s.consumedEnergy },
+              { key: 'hp_gained_eating', label: 'hp_gained_eating', getter: (s: GenerationStats) => s.hpGainedFromEating },
+              { key: 'hp_gained_consuming_energy', label: 'hp_gained_consuming_energy', getter: (s: GenerationStats) => s.hpGainedFromConsumingEnergy },
+              { key: 'eaten', label: 'eaten', getter: (s: GenerationStats) => s.reasons.eaten },
+              { key: 'out_of_world', label: 'out_of_world', getter: (s: GenerationStats) => s.reasons.out_of_world },
+              { key: 'no_hp', label: 'no_hp', getter: (s: GenerationStats) => s.reasons.no_hp }
+            ]
+            const computeTopBottom = (values: number[]) => {
+              const pairs = values.map((v, i) => ({ i, v }))
+              const count = Math.min(5, pairs.length)
+              const top = [...pairs].sort((a, b) => b.v - a.v).slice(0, count)
+              const bottom = [...pairs].sort((a, b) => a.v - b.v).slice(0, count)
+              return { top, bottom }
+            }
+            return (
+              <div>
+                <div className="strongest-orbs-title">Top 5 / Bottom 5 by stat</div>
+                {metrics.map(m => {
+                  const values = gens.map(m.getter)
+                  const { top, bottom } = computeTopBottom(values)
+                  return (
+                    <div key={`metric-${m.key}`} className="metric-block">
+                      <div className="metric-name">{m.label}</div>
+                      <div className="metric-lists">
+                        <div className="metric-list">
+                          <div className="list-title">most</div>
+                          <ul>
+                            {top.map(p => (
+                              <li key={`${m.key}-top-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="metric-list">
+                          <div className="list-title">least</div>
+                          <ul>
+                            {bottom.map(p => (
+                              <li key={`${m.key}-bottom-${p.i}`}>Gen {p.i + 1}: {p.v}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </div>
+      </div>
 
       {showSettings && (
         <SettingsPanel
@@ -1871,6 +2465,45 @@ function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {showShortcuts && (
+        <div className="shortcuts-panel" role="dialog" aria-label="Keyboard shortcuts">
+          <div className="shortcuts-panel-header">
+            <div>Shortcuts</div>
+            <button onClick={() => setShowShortcuts(false)}>⤫</button>
+          </div>
+          <div className="shortcuts-grid">
+            <div className="shortcut-key"><kbd>Space</kbd></div>
+            <div className="shortcut-desc">Toggle time (pause / resume)</div>
+
+            <div className="shortcut-key"><kbd>+</kbd> / <kbd>-</kbd></div>
+            <div className="shortcut-desc">Increase / decrease speed</div>
+
+            <div className="shortcut-key"><kbd>]</kbd></div>
+            <div className="shortcut-desc">Next turn (pauses first)</div>
+
+            <div className="shortcut-key"><kbd>G</kbd></div>
+            <div className="shortcut-desc">Toggle graphics</div>
+
+            <div className="shortcut-key"><kbd>R</kbd></div>
+            <div className="shortcut-desc">Restart</div>
+
+            <div className="shortcut-key"><kbd>N</kbd></div>
+            <div className="shortcut-desc">New generation</div>
+
+            <div className="shortcut-key"><kbd>S</kbd></div>
+            <div className="shortcut-desc">Settings</div>
+          </div>
+        </div>
+      )}
+
+      <button
+        className="shortcuts-fab"
+        onClick={() => setShowShortcuts(s => !s)}
+        title="Shortcuts"
+      >
+        ?
+      </button>
     </>
   )
 }

@@ -1,6 +1,6 @@
 #root {
     position: relative;
-    max-width: 1280px;
+    width: 100vw;
     margin: 0 auto;
     padding: 2rem;
 }
@@ -23,16 +23,27 @@
 
 .content {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 16px;
+    align-items: flex-start;
+    overflow: visible;
 }
 
-.right-panel {
+.world-wrap {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    z-index: 10;
+    flex: 1;
+    min-width: 0;
+}
+
+.world-scroll {
+    max-width: 100%;
     width: 100%;
-    background: #1a1a1a;
-    border-radius: 12px;
-    padding: 12px;
-    overflow-y: auto;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-bottom: 8px;
 }
 
 .gen-tabs {
@@ -158,6 +169,7 @@
 }
 
 .orb {
+    color: #000;
     position: absolute;
     width: 36px;
     height: 36px;
@@ -173,6 +185,22 @@
 .orb:hover {
     box-shadow: 0 0 24px #f0b800;
     cursor: pointer;
+}
+
+.orb.selected {
+  position: relative;
+}
+.orb.selected::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -150%);
+    width: 0; 
+    height: 0; 
+    border-left: 15px solid transparent;
+    border-right: 15px solid transparent;
+    border-top: 20px solid rgb(220, 72, 72);
 }
 
 .orb.glow-white {
@@ -191,6 +219,7 @@
 .no-effects .orb.glow-white,
 .no-effects .orb.glow-red,
 .no-effects .orb.glow-green,
+.no-effects .orb.selected,
 .no-effects .orb:hover {
   box-shadow: none !important;
 }
@@ -226,16 +255,15 @@
 .energy-level-5 { background: rgba(255, 255, 200, 0.4); }
 
 .orb-story {
-    position: fixed;
-    z-index: 1000;
-    top: 15px;
-    left: 15px;
     background: #1a1a1a;
     padding: 12px 24px;
     border-radius: 16px;
-    overflow-y: scroll;
-    height: calc(100% - 60px);
-    max-width: calc(100% - 60px);
+    overflow-y: auto;
+    max-height: calc(100vh - 32px);
+    width: 320px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
 }
 
 .orb-story__header {
@@ -406,6 +434,73 @@
   margin-top: 4px;
 }
 
+/* Shortcuts help */
+.shortcuts-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1100;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid #555;
+  background: #2a2a2a;
+  color: #eee;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.shortcuts-fab:hover {
+  border-color: #888;
+}
+
+.shortcuts-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 72px;
+  z-index: 1100;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 12px 14px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.shortcuts-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: #ddd;
+  font-weight: 600;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.shortcut-key kbd {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-bottom-color: #333;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #eee;
+}
+
+.shortcut-desc {
+  color: #bbb;
+  font-size: 12px;
+}
+
 /* Orb generator panel */
 .orb-generator-panel {
   position: fixed;
@@ -477,4 +572,3 @@
 .saved-orb-actions button:hover {
   border-color: #888;
 }
-

@@ -7,15 +7,13 @@ export type Settings = {
   initialOrbsCount: number
   newGenStrongestCount: number
   newGenOffspringPerParent: number
+  birthTaxPercent: number
   initialEnergyOnMap: number
   resetEnergyOnNewGenerations: boolean
   graphicEffects: boolean
-  splitHPThreshold: number
   hpGainByEnergyConsumption: number
   energyCreatedOnDeath: number
-  dnaLength: number
-  reactionsLength: number
-  reactionDirectionsLength: number
+  scanRadius: number
   idLength: number
   initialTurnDuration: number
 }
@@ -23,20 +21,19 @@ export type Settings = {
 export const defaultSettings: Settings = {
   worldSize: [15, 25],
   initialOrbHP: [20, 30],
-  initialOrbsCount: 30,
+  initialOrbsCount: 10,
   newGenStrongestCount: 10,
   newGenOffspringPerParent: 3,
+  birthTaxPercent: 20,
   initialEnergyOnMap: 300,
   resetEnergyOnNewGenerations: false,
   graphicEffects: true,
-  splitHPThreshold: 6,
   hpGainByEnergyConsumption: 3,
   energyCreatedOnDeath: 2,
-  dnaLength: 36,
-  reactionsLength: 5,
-  reactionDirectionsLength: 4,
+  scanRadius: 1,
+  // scanRadius: 1,
   idLength: 6,
-  initialTurnDuration: 100,
+  initialTurnDuration: 500,
 }
 
 const STORAGE_KEY = 'life1_settings'
@@ -46,7 +43,7 @@ export function loadSettings(): Settings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultSettings
     const parsed = JSON.parse(raw)
-    const merged: Settings = {
+    const merged = {
       ...defaultSettings,
       ...parsed
     }
@@ -73,7 +70,7 @@ function clamp(n: number, min: number, max?: number): number {
   return clampedMin
 }
 
-export function sanitizeSettings(s: Settings): Settings {
+export function sanitizeSettings(s: Partial<Settings>): Settings {
   const rows = clamp(s.worldSize?.[0] ?? defaultSettings.worldSize[0], 1)
   const cols = clamp(s.worldSize?.[1] ?? defaultSettings.worldSize[1], 1)
   const hpMin = clamp(s.initialOrbHP?.[0] ?? defaultSettings.initialOrbHP[0], 1)
@@ -86,15 +83,13 @@ export function sanitizeSettings(s: Settings): Settings {
     initialOrbsCount: clamp(s.initialOrbsCount ?? defaultSettings.initialOrbsCount, 1),
     newGenStrongestCount: clamp(s.newGenStrongestCount ?? defaultSettings.newGenStrongestCount, 1),
     newGenOffspringPerParent: clamp(s.newGenOffspringPerParent ?? defaultSettings.newGenOffspringPerParent, 1),
+    birthTaxPercent: clamp(s.birthTaxPercent ?? defaultSettings.birthTaxPercent, 0, 100),
     initialEnergyOnMap: clamp(s.initialEnergyOnMap ?? defaultSettings.initialEnergyOnMap, 0),
     resetEnergyOnNewGenerations: Boolean(s.resetEnergyOnNewGenerations),
     graphicEffects: typeof s.graphicEffects === 'boolean' ? s.graphicEffects : defaultSettings.graphicEffects,
-    splitHPThreshold: clamp(s.splitHPThreshold ?? defaultSettings.splitHPThreshold, 1),
     hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
     energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
-    dnaLength: clamp(s.dnaLength ?? defaultSettings.dnaLength, 1),
-    reactionsLength: clamp(s.reactionsLength ?? defaultSettings.reactionsLength, 1),
-    reactionDirectionsLength: clamp(s.reactionDirectionsLength ?? defaultSettings.reactionDirectionsLength, 1),
+    scanRadius: clamp(s.scanRadius ?? defaultSettings.scanRadius, 1),
     idLength: clamp(s.idLength ?? defaultSettings.idLength, 1),
     initialTurnDuration: clamp(s.initialTurnDuration ?? defaultSettings.initialTurnDuration, 1),
   }
@@ -155,6 +150,22 @@ export function SettingsPanel({
           <input className="settings-input" type="number" min={1} value={draftSettings.newGenOffspringPerParent}
                  onChange={(e) => setDraftSettings(s => ({ ...s, newGenOffspringPerParent: Math.max(1, Number(e.target.value)) }))} />
         </div>
+        <div className="settings-row">
+          <label>Birth Tax (%)</label>
+          <input
+            className="settings-input"
+            type="number"
+            min={0}
+            max={100}
+            value={draftSettings.birthTaxPercent}
+            onChange={(e) =>
+              setDraftSettings(s => ({
+                ...s,
+                birthTaxPercent: Math.min(100, Math.max(0, Number(e.target.value)))
+              }))
+            }
+          />
+        </div>
 
         <div className="settings-row">
           <label>Initial Energy on Map</label>
@@ -170,11 +181,6 @@ export function SettingsPanel({
         {/* Graphics effects toggle moved to the top actions bar */}
 
         <div className="settings-row">
-          <label>Split HP Threshold</label>
-          <input className="settings-input" type="number" min={1} value={draftSettings.splitHPThreshold}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, splitHPThreshold: Math.max(1, Number(e.target.value)) }))} />
-        </div>
-        <div className="settings-row">
           <label>HP Gain by Energy</label>
           <input className="settings-input" type="number" min={0} value={draftSettings.hpGainByEnergyConsumption}
                  onChange={(e) => setDraftSettings(s => ({ ...s, hpGainByEnergyConsumption: Math.max(0, Number(e.target.value)) }))} />
@@ -186,19 +192,9 @@ export function SettingsPanel({
         </div>
 
         <div className="settings-row">
-          <label>DNA Length</label>
-          <input className="settings-input" type="number" min={1} value={draftSettings.dnaLength}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, dnaLength: Math.max(1, Number(e.target.value)) }))} />
-        </div>
-        <div className="settings-row">
-          <label>Reactions Columns</label>
-          <input className="settings-input" type="number" min={1} value={draftSettings.reactionsLength}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, reactionsLength: Math.max(1, Number(e.target.value)) }))} />
-        </div>
-        <div className="settings-row">
-          <label>Reaction Directions Rows</label>
-          <input className="settings-input" type="number" min={1} value={draftSettings.reactionDirectionsLength}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, reactionDirectionsLength: Math.max(1, Number(e.target.value)) }))} />
+          <label>Scan radius</label>
+          <input className="settings-input" type="number" min={1} value={draftSettings.scanRadius}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, scanRadius: Math.max(1, Number(e.target.value)) }))} />
         </div>
 
         <div className="settings-row">
