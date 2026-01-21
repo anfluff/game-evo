@@ -170,17 +170,14 @@
     cursor: pointer;
 }
 
-.orb.selected::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -150%);
-    width: 0;
-    height: 0;
-    border-left: 15px solid transparent;
-    border-right: 15px solid transparent;
-    border-top: 20px solid rgb(220, 72, 72);
+.orb.selected {
+    outline: 3px solid rgba(255, 255, 255, 0.95);
+    outline-offset: 2px;
+}
+
+.orb.relative {
+    outline: 3px solid rgba(120, 220, 140, 0.9);
+    outline-offset: 2px;
 }
 
 .orb.glow-white {

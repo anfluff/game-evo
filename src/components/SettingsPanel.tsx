@@ -29,7 +29,7 @@ export const defaultSettings: Settings = {
   resetEnergyOnNewGenerations: true,
   graphicEffects: true,
   hpGainByEnergyConsumption: 3,
-  energyCreatedOnDeath: 2,
+  energyCreatedOnDeath: 3,
   scanRadius: 1,
   // scanRadius: 1,
   idLength: 6,
