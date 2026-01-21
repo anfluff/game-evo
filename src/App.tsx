@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import './styles/App.css'
 import { Line } from 'react-chartjs-2'
 import {
@@ -1500,7 +1500,7 @@ function generateWorld(worldIteration: number = 0) {
 
   generateMap()
 
-  if (worldIteration > 1) {
+  if (worldIteration > 0) {
     // последующие геренации
     // Build strongest list from last generation's dead orbs, ensuring unique IDs
     const sorted = [...lastTurnDeadOrbs].sort((a, b) => b.age - a.age)
@@ -1534,7 +1534,6 @@ function generateWorld(worldIteration: number = 0) {
     if (resetEnergyOnNewGenerations) {
       // Reset energy on each subsequent generation
       reseedRandomEnergy()
-      console.log('AAAA')
     } else {
       // Keep existing energy grid; no redistribution
       if (!Array.isArray(worldEnergy) || worldEnergy.length === 0) {
@@ -1544,7 +1543,6 @@ function generateWorld(worldIteration: number = 0) {
         }
         distributeEnergyOnMap(initialEnergyOnMap)
       }
-      console.log('BBB')
     }
   } else {
     // первая генерация
@@ -1905,6 +1903,7 @@ function App() {
   }, [graphicsEnabled])
   const [ turn, setTurn ] = useState(0)
   const [ worldNum, setWorldNum ] = useState(0)
+  const worldNumRef = useRef(worldNum)
   const [ turnDuration, setTurnDuration ] = useState(initialTurnDuration)
   const [ selectedOrb, setSelectedOrb ] = useState<Orb | null>(null)
   const [ paused, setPaused ] = useState(true)
@@ -1913,9 +1912,58 @@ function App() {
   const [ draftSettings, setDraftSettings ] = useState<Settings>(settings)
   const [ showShortcuts, setShowShortcuts ] = useState(false)
 
+  function trackWorldStats() {
+    if (deathStatsPerGeneration.length > 0 && currentGeneration > 0) {
+      deathStatsPerGeneration[currentGeneration - 1].turns = turn
+
+      const sorted = [...lastTurnDeadOrbs].sort((a, b) => b.age - a.age)
+      const uniqueStrongest: Orb[] = []
+      const seen = new Set<string>()
+      for (const orb of sorted) {
+        if (seen.has(orb.id)) {
+          continue
+        }
+        seen.add(orb.id)
+        uniqueStrongest.push(orb)
+        if (uniqueStrongest.length >= newGenStrongestCount) {
+          break
+        }
+      }
+      strongestOrbsPerGeneration[currentGeneration - 1] = uniqueStrongest
+    }
+  }
+
+  function resetSimulation() {
+    currentGeneration = 0
+    deathStatsPerGeneration = []
+    strongestOrbsPerGeneration = []
+    lastTurnDeadOrbs = []
+    selectedOrbIdForDebug = null
+    worldNumRef.current = 0
+
+    generateWorld(0)
+  }
+
+  function advanceGeneration() {
+    if (orbs.length > 0) {
+      lastTurnDeadOrbs.push(...orbs)
+    }
+    const nextWorldNum = worldNumRef.current + 1
+    worldNumRef.current = nextWorldNum
+    trackWorldStats()
+    startNewGeneration()
+    generateWorld(nextWorldNum)
+    setWorldNum(nextWorldNum)
+    setTurn(0)
+  }
+
   useEffect(() => {
     selectedOrbIdForDebug = selectedOrb?.id ?? null
   }, [selectedOrb])
+
+  useEffect(() => {
+    worldNumRef.current = worldNum
+  }, [worldNum])
 
   // Helper to visualize genes
   function renderGenesTable(genes: Genes) {
@@ -2114,7 +2162,7 @@ function App() {
         setSelectedOrb(null)
         setWorldNum(0)
         setTurn(0)
-        generateWorld()
+        resetSimulation()
         return
       }
 
@@ -2122,8 +2170,7 @@ function App() {
         e.preventDefault()
         setPaused(true)
         setSelectedOrb(null)
-        generateWorld(0)
-        setTurn(0)
+        advanceGeneration()
         return
       }
 
@@ -2142,30 +2189,6 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showSettings])
 
-  function trackWorldStats() {
-    if (deathStatsPerGeneration.length > 0 && currentGeneration > 0) {
-      // Record turns count for the generation that just ended
-      deathStatsPerGeneration[currentGeneration - 1].turns = turn
-
-      // Save strongest (oldest) orbs for the generation that just ended.
-      // Ensure uniqueness by ID to avoid duplicate React keys.
-      const sorted = [...lastTurnDeadOrbs].sort((a, b) => b.age - a.age)
-      const uniqueStrongest: Orb[] = []
-      const seen = new Set<string>()
-      for (const orb of sorted) {
-        if (seen.has(orb.id)) {
-          continue
-        }
-        seen.add(orb.id)
-        uniqueStrongest.push(orb)
-        if (uniqueStrongest.length >= newGenStrongestCount) {
-          break
-        }
-      }
-      strongestOrbsPerGeneration[currentGeneration - 1] = uniqueStrongest
-    }
-  }
-
   useEffect(() => {
     if (paused) {
       return
@@ -2177,11 +2200,7 @@ function App() {
         if (turn === 0) {
           return
         }
-        setWorldNum(val => val + 1)
-        trackWorldStats()
-        startNewGeneration()
-        generateWorld(worldNum)
-        setTurn(0)
+        advanceGeneration()
       }
     }, turnDuration)
 
@@ -2233,7 +2252,7 @@ function App() {
               setSelectedOrb(null)
               setWorldNum(0)
               setTurn(0)
-              generateWorld()
+              resetSimulation()
             }}
           >
             ↪️Restart
@@ -2273,8 +2292,7 @@ function App() {
             onClick={() => {
               setPaused(true)
               setSelectedOrb(null)
-              generateWorld()
-              setTurn(0)
+              advanceGeneration()
             }}
           >
             ⏭️ New Gen
