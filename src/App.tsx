@@ -2258,6 +2258,12 @@ function App() {
     makeTurn(turn)
   }
 
+  const speedSteps = [500, 350, 200, 100, 1]
+  const setSpeedStep = (step: number) => {
+    const index = Math.max(0, Math.min(speedSteps.length - 1, step - 1))
+    setTurnDuration(speedSteps[index])
+  }
+
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof HTMLElement)) return false
@@ -2278,7 +2284,17 @@ function App() {
           e.code === 'KeyG' ||
           e.code === 'KeyM' ||
           e.code === 'KeyN' ||
-          e.code === 'KeyS')
+          e.code === 'KeyS' ||
+          e.code === 'Digit1' ||
+          e.code === 'Digit2' ||
+          e.code === 'Digit3' ||
+          e.code === 'Digit4' ||
+          e.code === 'Digit5' ||
+          e.code === 'Numpad1' ||
+          e.code === 'Numpad2' ||
+          e.code === 'Numpad3' ||
+          e.code === 'Numpad4' ||
+          e.code === 'Numpad5')
       ) {
         return
       }
@@ -2286,6 +2302,12 @@ function App() {
       if (e.code === 'Space') {
         e.preventDefault()
         setPaused(p => !p)
+        return
+      }
+
+      if (e.code === 'Escape') {
+        e.preventDefault()
+        setSelectedOrb(null)
         return
       }
 
@@ -2298,6 +2320,26 @@ function App() {
       if (e.code === 'Minus') {
         e.preventDefault()
         setTurnDuration(d => Math.min(500, d + 10))
+        return
+      }
+
+      if (
+        e.code === 'Digit1' ||
+        e.code === 'Digit2' ||
+        e.code === 'Digit3' ||
+        e.code === 'Digit4' ||
+        e.code === 'Digit5' ||
+        e.code === 'Numpad1' ||
+        e.code === 'Numpad2' ||
+        e.code === 'Numpad3' ||
+        e.code === 'Numpad4' ||
+        e.code === 'Numpad5'
+      ) {
+        e.preventDefault()
+        const index = Number(e.code.replace('Digit', '').replace('Numpad', ''))
+        if (!Number.isNaN(index)) {
+          setSpeedStep(index)
+        }
         return
       }
 
@@ -2429,7 +2471,6 @@ function App() {
               max={500}
               step={1}
               value={Math.max(1, Math.min(500, 501 - turnDuration))}
-              disabled={turn === 0}
               onChange={(e) => setTurnDuration(501 - Number(e.target.value))}
               style={{ width: 160, margin: '0 8px', verticalAlign: 'middle' }}
               title="Turn speed (slow ↔ fast)"
@@ -2978,8 +3019,14 @@ function App() {
             <div className="shortcut-key"><kbd>+</kbd> / <kbd>-</kbd></div>
             <div className="shortcut-desc">Increase / decrease speed</div>
 
+            <div className="shortcut-key"><kbd>1</kbd>–<kbd>5</kbd></div>
+            <div className="shortcut-desc">Set speed (slow → fast)</div>
+
             <div className="shortcut-key"><kbd>]</kbd></div>
             <div className="shortcut-desc">Next turn (pauses first)</div>
+
+            <div className="shortcut-key"><kbd>Esc</kbd></div>
+            <div className="shortcut-desc">Deselect orb</div>
 
             <div className="shortcut-key"><kbd>G</kbd></div>
             <div className="shortcut-desc">Toggle graphics</div>
