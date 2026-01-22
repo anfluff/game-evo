@@ -10,12 +10,18 @@ export type Settings = {
   birthTaxPercent: number
   initialEnergyOnMap: number
   resetEnergyOnNewGenerations: boolean
+  energyReplenishIntervalTurns: number
+  energySpreadThreshold: number
   graphicEffects: boolean
   hpGainByEnergyConsumption: number
   energyCreatedOnDeath: number
+  bitePercentOfAttackerHp: number
+  biteMineralDropFraction: number
+  biteMineralDropMin: number
   scanRadius: number
   idLength: number
   initialTurnDuration: number
+  kinshipMaxDepth: number
 }
 
 export const defaultSettings: Settings = {
@@ -27,13 +33,19 @@ export const defaultSettings: Settings = {
   birthTaxPercent: 20,
   initialEnergyOnMap: 200,
   resetEnergyOnNewGenerations: true,
+  energyReplenishIntervalTurns: 50,
+  energySpreadThreshold: 5,
   graphicEffects: true,
   hpGainByEnergyConsumption: 3,
   energyCreatedOnDeath: 3,
+  bitePercentOfAttackerHp: 0.25,
+  biteMineralDropFraction: 0.4,
+  biteMineralDropMin: 1,
   scanRadius: 1,
   // scanRadius: 1,
   idLength: 6,
   initialTurnDuration: 500,
+  kinshipMaxDepth: 12
 }
 
 const STORAGE_KEY = 'life1_settings'
@@ -70,6 +82,15 @@ function clamp(n: number, min: number, max?: number): number {
   return clampedMin
 }
 
+function clampFloat(n: number, min: number, max?: number): number {
+  const base = isFinite(n) ? n : min
+  const clampedMin = Math.max(min, base)
+  if (typeof max === 'number' && isFinite(max)) {
+    return Math.min(clampedMin, max)
+  }
+  return clampedMin
+}
+
 export function sanitizeSettings(s: Partial<Settings>): Settings {
   const rows = clamp(s.worldSize?.[0] ?? defaultSettings.worldSize[0], 1)
   const cols = clamp(s.worldSize?.[1] ?? defaultSettings.worldSize[1], 1)
@@ -86,12 +107,29 @@ export function sanitizeSettings(s: Partial<Settings>): Settings {
     birthTaxPercent: clamp(s.birthTaxPercent ?? defaultSettings.birthTaxPercent, 0, 100),
     initialEnergyOnMap: clamp(s.initialEnergyOnMap ?? defaultSettings.initialEnergyOnMap, 0),
     resetEnergyOnNewGenerations: Boolean(s.resetEnergyOnNewGenerations),
+    energyReplenishIntervalTurns: clamp(
+      s.energyReplenishIntervalTurns ?? defaultSettings.energyReplenishIntervalTurns,
+      0
+    ),
+    energySpreadThreshold: clamp(s.energySpreadThreshold ?? defaultSettings.energySpreadThreshold, 0),
     graphicEffects: typeof s.graphicEffects === 'boolean' ? s.graphicEffects : defaultSettings.graphicEffects,
     hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
     energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
+    bitePercentOfAttackerHp: clampFloat(
+      s.bitePercentOfAttackerHp ?? defaultSettings.bitePercentOfAttackerHp,
+      0,
+      2
+    ),
+    biteMineralDropFraction: clampFloat(
+      s.biteMineralDropFraction ?? defaultSettings.biteMineralDropFraction,
+      0,
+      1
+    ),
+    biteMineralDropMin: clamp(s.biteMineralDropMin ?? defaultSettings.biteMineralDropMin, 0),
     scanRadius: clamp(s.scanRadius ?? defaultSettings.scanRadius, 1),
     idLength: clamp(s.idLength ?? defaultSettings.idLength, 1),
     initialTurnDuration: clamp(s.initialTurnDuration ?? defaultSettings.initialTurnDuration, 1),
+    kinshipMaxDepth: clamp(s.kinshipMaxDepth ?? defaultSettings.kinshipMaxDepth, 1),
   }
 }
 
@@ -177,6 +215,16 @@ export function SettingsPanel({
           <input type="checkbox" checked={draftSettings.resetEnergyOnNewGenerations}
                  onChange={(e) => setDraftSettings(s => ({ ...s, resetEnergyOnNewGenerations: e.target.checked }))} />
         </div>
+        <div className="settings-row">
+          <label>Energy replenish interval (turns)</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.energyReplenishIntervalTurns}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energyReplenishIntervalTurns: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Energy spread threshold</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.energySpreadThreshold}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energySpreadThreshold: Math.max(0, Number(e.target.value)) }))} />
+        </div>
 
         {/* Graphics effects toggle moved to the top actions bar */}
 
@@ -189,6 +237,21 @@ export function SettingsPanel({
           <label>Energy generated on death</label>
           <input className="settings-input" type="number" min={0} value={draftSettings.energyCreatedOnDeath}
                  onChange={(e) => setDraftSettings(s => ({ ...s, energyCreatedOnDeath: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Bite % of attacker HP</label>
+          <input className="settings-input" type="number" min={0} step="0.01" value={draftSettings.bitePercentOfAttackerHp}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, bitePercentOfAttackerHp: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Bite mineral drop fraction</label>
+          <input className="settings-input" type="number" min={0} step="0.01" value={draftSettings.biteMineralDropFraction}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, biteMineralDropFraction: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Bite mineral drop min</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.biteMineralDropMin}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, biteMineralDropMin: Math.max(0, Number(e.target.value)) }))} />
         </div>
 
         <div className="settings-row">
@@ -206,6 +269,11 @@ export function SettingsPanel({
           <label>Initial Turn Duration (ms)</label>
           <input className="settings-input" type="number" min={1} value={draftSettings.initialTurnDuration}
                  onChange={(e) => setDraftSettings(s => ({ ...s, initialTurnDuration: Math.max(1, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Kinship Max Depth</label>
+          <input className="settings-input" type="number" min={1} value={draftSettings.kinshipMaxDepth}
+                  onChange={(e) => setDraftSettings(s => ({ ...s, kinshipMaxDepth: Math.max(1, Number(e.target.value)) }))} />
         </div>
 
         <div className="settings-actions">

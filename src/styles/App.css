@@ -148,7 +148,34 @@
     position: absolute;
     top: 0;
     left: 0;
-    z-index: 3;
+    z-index: 2;
+}
+
+.attack-effects-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.attack-effect {
+    position: absolute;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 0, 0, 0.85);
+    transform-origin: left center;
+    box-shadow: 0 0 10px rgba(255, 0, 0, 0.85);
+}
+
+.attack-effect::after {
+    content: '';
+    position: absolute;
+    right: -7px;
+    top: -4px;
+    border-left: 8px solid rgba(255, 0, 0, 0.85);
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
 }
 
 .orb {
@@ -188,6 +215,10 @@
     box-shadow: 0 0 24px rgba(255, 0, 0, 0.25);
 }
 
+.orb.glow-orange {
+    box-shadow: 0 0 24px rgba(255, 165, 0, 0.3);
+}
+
 .orb.glow-green {
     box-shadow: 0 0 24px rgba(0, 255, 0, 0.25);
 }
@@ -195,10 +226,15 @@
 /* Disable orb glows and hover effects when graphic effects are off */
 .no-effects .orb.glow-white,
 .no-effects .orb.glow-red,
+.no-effects .orb.glow-orange,
 .no-effects .orb.glow-green,
 .no-effects .orb.selected,
 .no-effects .orb:hover {
   box-shadow: none !important;
+}
+
+.no-effects .attack-effect {
+  opacity: 0;
 }
 
 .grid.energy-layer {
