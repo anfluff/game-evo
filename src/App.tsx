@@ -2614,6 +2614,7 @@ function App() {
                   onClick={() => showOrbStory(orb)}
                 >
                   {orb.hp}
+                  <div className="orb-age-badge">{orb.age}</div>
                 </div>
               )
             })}

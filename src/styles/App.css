@@ -10,7 +10,7 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
-}
+
 .actions-bar-panel {
     display: flex;
     align-items: center;
@@ -190,6 +190,24 @@
     text-align: center;
     transition: all .15s ease;
     will-change: transform;
+}
+
+.orb-age-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #111;
+    font-size: 9px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    line-height: 1;
+    pointer-events: none;
 }
 
 .orb:hover {
