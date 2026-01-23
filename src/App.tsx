@@ -334,8 +334,7 @@ class Orb {
     this.hp = hp
     this.genes = genes
     this.id = getRandomId(idLength)
-    // Simple naming based on ID since DNA is gone
-    this.name = `Orb ${this.id.substring(0, 4)}` + (parent ? ` of ${parent.name}` : '')
+    this.name = this.id.padEnd(8, '0').substring(0, 8)
     this.parentId = parent?.id ?? null
     this.ancestorIds = parent ? [ parent.id, ...parent.ancestorIds ].slice(0, kinshipMaxDepth) : []
     this.addToLog(`I was born with ❤️${hp}hp`)
@@ -657,10 +656,10 @@ class Orb {
       if (dx === 0 && dy === 0) {
         return 'here'
       }
-      const vertical = dy < 0 ? 'top' : dy > 0 ? 'bottom' : ''
+      const vertical = dy < 0 ? 'up' : dy > 0 ? 'down' : ''
       const horizontal = dx < 0 ? 'left' : dx > 0 ? 'right' : ''
       if (vertical && horizontal) {
-        return `${vertical} ${horizontal}`
+        return `${vertical}-${horizontal}`
       }
       return vertical || horizontal || 'here'
     }
@@ -905,13 +904,14 @@ class Orb {
       const moveKin = (W_exploration * motivations.exploration + W_fear * motivations.fearEffective) * cell.kinAffinity
       const moveUtil = moveHunger + moveSeekEnergy + moveAggro + moveExplore + moveKin - moveFear
 
+      const moveDirection = directionFromDelta(cell.dx, cell.dy)
       if (!cell.occupied) {
         const moveDecision: ActionDecision = {
           type: 'MOVE',
           targetX: cell.x,
           targetY: cell.y,
           utility: moveUtil,
-          description: `move to ${cell.x},${cell.y}`
+          description: `move ${moveDirection}`
         }
         decisions.push(moveDecision)
         if (debug) {
@@ -1078,7 +1078,7 @@ class Orb {
             targetX: cell.x,
             targetY: cell.y,
             utility: attackUtility,
-            description: `attack at ${cell.x},${cell.y}`
+            description: `attack ${moveDirection}`
           }
           decisions.push(attackDecision)
           if (debug && interaction) {
@@ -1118,7 +1118,7 @@ class Orb {
           targetX: cell.x,
           targetY: cell.y,
           utility: biteUtility,
-          description: `bite at ${cell.x},${cell.y}`
+          description: `bite ${moveDirection}`
         }
         decisions.push(biteDecision)
         if (debug && interaction) {
@@ -1336,7 +1336,12 @@ class Orb {
 
   executeDecision(d: ActionDecision) {
     this.lastActionType = d.type
-    this.addToLog(`I decided to ${d.description} (u=${d.utility.toFixed(2)})`)
+    if (d.type === 'DIVIDE') {
+      const { childHp, tax } = computeBirthCost(this.hp, this.genes)
+      this.addToLog(`I decided to divide, child ❤️${childHp}hp, tax -${tax}hp)`)
+    } else {
+      this.addToLog(`I decided to ${d.description}`)
+    }
     
     switch (d.type) {
       case 'WAIT':
@@ -1386,10 +1391,7 @@ class Orb {
       return
     }
 
-    this.addToLog(`It worked`)
-    if (getCellEnergy(this.y, this.x) > 0) {
-      this.consumeEnergy()
-    }
+    this.addToLog(`Moved`)
   }
 
   bite(x: number, y: number) {
@@ -1481,7 +1483,7 @@ class Orb {
     if (canGiveBirth(this)) {
       this.triggerGlow('glow-green')
       
-      const { childHp, totalCost } = computeBirthCost(this.hp, this.genes)
+      const { childHp, tax, totalCost } = computeBirthCost(this.hp, this.genes)
       
       // Safety check
       if (this.hp - totalCost <= 0) {
@@ -1494,7 +1496,7 @@ class Orb {
 
       this.loseHp(totalCost)
       this.reproductionCooldownRemaining = Math.max(0, Math.round(this.genes.reproduction_cooldown))
-      this.addToLog(`It spawned ${child.name}`)
+      this.addToLog(`It spawned ${child.name} with ❤️${childHp}hp (tax -${tax}hp)`)
       registerBirth()
     } else {
       this.addToLog(`I cannot give birth right now`)
@@ -1506,7 +1508,7 @@ class Orb {
     if (energyHere > 0) {
       consumeCellEnergy(this.y, this.x, 1)
       registerEnergyConsumed(1)
-      this.addToLog(`It worked`)
+      this.addToLog(`Consumed energy +${hpGainByEnergyConsumption}hp`)
       this.gainHp(hpGainByEnergyConsumption)
       registerHpGainedFromConsumingEnergy(hpGainByEnergyConsumption)
       this.preventAgingThisTurn = true
