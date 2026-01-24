@@ -12,6 +12,7 @@ export type Settings = {
   resetEnergyOnNewGenerations: boolean
   energyReplenishIntervalTurns: number
   energySpreadThreshold: number
+  energySpreadLimit: number
   graphicEffects: boolean
   hpGainByEnergyConsumption: number
   energyCreatedOnDeath: number
@@ -26,25 +27,35 @@ export type Settings = {
 
 export const defaultSettings: Settings = {
   worldSize: [15, 25],
-  initialOrbHP: [10, 20],
-  initialOrbsCount: 10,
-  newGenStrongestCount: 10,
-  newGenOffspringPerParent: 3,
-  birthTaxPercent: 20,
+  graphicEffects: true,
+  initialTurnDuration: 200,
+
   initialEnergyOnMap: 200,
   resetEnergyOnNewGenerations: true,
+
+  initialOrbHP: [10, 20],
+  initialOrbsCount: 15,
+  newGenStrongestCount: 5,
+  newGenOffspringPerParent: 3,
+
   energyReplenishIntervalTurns: 50,
+  // energySpreadThreshold: 8,
+  // energySpreadLimit: 10,
   energySpreadThreshold: 5,
-  graphicEffects: true,
-  hpGainByEnergyConsumption: 3,
-  energyCreatedOnDeath: 3,
-  bitePercentOfAttackerHp: 0.25,
-  biteMineralDropFraction: 0.4,
+  energySpreadLimit: 4,
+
+  birthTaxPercent: 20,
+
   biteMineralDropMin: 1,
+  biteMineralDropFraction: 0.2,
+  bitePercentOfAttackerHp: 0.3,
+
+  hpGainByEnergyConsumption: 3,
+  energyCreatedOnDeath: 2,
+
   scanRadius: 1,
-  // scanRadius: 1,
+
   idLength: 6,
-  initialTurnDuration: 500,
   kinshipMaxDepth: 12
 }
 
@@ -112,6 +123,7 @@ export function sanitizeSettings(s: Partial<Settings>): Settings {
       0
     ),
     energySpreadThreshold: clamp(s.energySpreadThreshold ?? defaultSettings.energySpreadThreshold, 0),
+    energySpreadLimit: clamp(s.energySpreadLimit ?? defaultSettings.energySpreadLimit, 0),
     graphicEffects: typeof s.graphicEffects === 'boolean' ? s.graphicEffects : defaultSettings.graphicEffects,
     hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
     energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
@@ -224,6 +236,11 @@ export function SettingsPanel({
           <label>Energy spread threshold</label>
           <input className="settings-input" type="number" min={0} value={draftSettings.energySpreadThreshold}
                  onChange={(e) => setDraftSettings(s => ({ ...s, energySpreadThreshold: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Energy spread limit</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.energySpreadLimit}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energySpreadLimit: Math.max(0, Number(e.target.value)) }))} />
         </div>
 
         {/* Graphics effects toggle moved to the top actions bar */}

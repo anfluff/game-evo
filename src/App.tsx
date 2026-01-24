@@ -36,6 +36,7 @@ const energyCreatedOnDeath = settings.energyCreatedOnDeath
 const scanRadius = settings.scanRadius
 
 const energyReplenishIntervalTurns = settings.energyReplenishIntervalTurns
+const energySpreadLimit = settings.energySpreadLimit
 const energySpreadThreshold = settings.energySpreadThreshold
 
 const bitePercentOfAttackerHp = settings.bitePercentOfAttackerHp
@@ -50,6 +51,7 @@ const birthTaxPercent = settings.birthTaxPercent
 const cellSize = 48
 const cellGap = 4
 const orbSize = 36
+const orbIcon = '🙎‍♂️'
 
 let graphicsEffectsEnabled = settings.graphicEffects
 
@@ -270,6 +272,7 @@ interface ActionDecision {
   targetY?: number
   utility: number
   description: string
+  icon: string
 }
 
 type OrbMotivations = {
@@ -337,7 +340,7 @@ class Orb {
     this.name = this.id.padEnd(8, '0').substring(0, 8)
     this.parentId = parent?.id ?? null
     this.ancestorIds = parent ? [ parent.id, ...parent.ancestorIds ].slice(0, kinshipMaxDepth) : []
-    this.addToLog(`I was born with ❤️${hp}hp`)
+    this.addToLog(`👋${orbIcon}, ${hp}❤️`)
   }
 
   private getLineageDistances(maxDepth?: number): Map<string, number> {
@@ -430,7 +433,7 @@ class Orb {
 
     // Apply unified aging once per act if not prevented by action
     if (!this.preventAgingThisTurn) {
-      this.addToLog(`> I aged and lost 1 hp`)
+      this.addToLog(`> ⌛️ –1❣️`)
       this.loseHp(1)
     }
     if (this.reproductionCooldownRemaining > 0) {
@@ -714,7 +717,8 @@ class Orb {
     const waitDecision: ActionDecision = {
       type: 'WAIT',
       utility: waitUtility,
-      description: 'wait'
+      description: 'wait',
+      icon: '💤'
     }
     decisions.push(waitDecision)
     if (debug) {
@@ -766,7 +770,8 @@ class Orb {
       const consumeDecision: ActionDecision = {
         type: 'CONSUME',
         utility: consumeUtility,
-        description: 'consume energy'
+        description: 'consume energy',
+        icon: '🍗⚡️'
       }
       decisions.push(consumeDecision)
       if (debug) {
@@ -819,7 +824,8 @@ class Orb {
       const divideDecision: ActionDecision = {
         type: 'DIVIDE',
         utility: divideUtility,
-        description: 'divide'
+        description: 'divide',
+        icon: `🙌${orbIcon}`
       }
       decisions.push(divideDecision)
       if (debug) {
@@ -911,7 +917,8 @@ class Orb {
           targetX: cell.x,
           targetY: cell.y,
           utility: moveUtil,
-          description: `move ${moveDirection}`
+          description: `move ${moveDirection}`,
+          icon: `🦵 ${moveDirection}`
         }
         decisions.push(moveDecision)
         if (debug) {
@@ -1078,7 +1085,8 @@ class Orb {
             targetX: cell.x,
             targetY: cell.y,
             utility: attackUtility,
-            description: `attack ${moveDirection}`
+            description: `attack ${moveDirection}`,
+            icon: `💥${orbIcon} ${moveDirection}`
           }
           decisions.push(attackDecision)
           if (debug && interaction) {
@@ -1118,7 +1126,8 @@ class Orb {
           targetX: cell.x,
           targetY: cell.y,
           utility: biteUtility,
-          description: `bite ${moveDirection}`
+          description: `bite ${moveDirection}`,
+          icon: `🍗${orbIcon} ${moveDirection}`
         }
         decisions.push(biteDecision)
         if (debug && interaction) {
@@ -1338,14 +1347,17 @@ class Orb {
     this.lastActionType = d.type
     if (d.type === 'DIVIDE') {
       const { childHp, tax } = computeBirthCost(this.hp, this.genes)
-      this.addToLog(`I decided to divide, child ❤️${childHp}hp, tax -${tax}hp)`)
+
+      // this.addToLog(`I decided to divide, child ❤️${childHp}hp, tax -${tax}hp)`)
+      this.addToLog(`${d.icon} (child –${childHp}❣️, tax –${tax}❣️)` )
     } else {
-      this.addToLog(`I decided to ${d.description}`)
+      // this.addToLog(`I decided to ${d.description}`)
+      this.addToLog(d.icon)
     }
     
     switch (d.type) {
       case 'WAIT':
-        this.addToLog('zZz...')
+        // this.addToLog('zZz...')
         break
       case 'CONSUME':
         this.consumeEnergy()
@@ -1391,7 +1403,7 @@ class Orb {
       return
     }
 
-    this.addToLog(`Moved`)
+    // this.addToLog(`Moved`)
   }
 
   bite(x: number, y: number) {
@@ -1433,7 +1445,9 @@ class Orb {
     const dropY = withinWorldBoundaries(preyX, preyY + 1) ? preyY + 1 : preyY
 
     const kills = prey.hp - biteAmount <= 0
-    prey.addToLog(`I was bitten by ${this.name} and lost ${biteAmount} hp`)
+    // prey.addToLog(`I was bitten by ${this.name} and lost ${biteAmount} hp`)
+    prey.addToLog(`${this.name} 🍗${orbIcon} > me, –${biteAmount}💔`)
+
     if (kills) {
       prey.deathReason = deathReasons.EATEN
     }
@@ -1448,7 +1462,8 @@ class Orb {
       addCellEnergy(dropY, dropX, mineralDrop)
     }
 
-    this.addToLog(`I bit Orb ${prey.id}: -${biteAmount}hp, +${hpTransfer}hp, dropped ${mineralDrop}`)
+    // this.addToLog(`I bit Orb ${prey.id}: -${biteAmount}💔, +${hpTransfer}❤️, dropped ${mineralDrop}`)
+    this.addToLog(`🍗${orbIcon} ${prey.id}: –${biteAmount}❣️, +${hpTransfer}❤️, dropped ${mineralDrop}⚡️`)
     this.preventAgingThisTurn = true
   }
 
@@ -1457,10 +1472,10 @@ class Orb {
     const intendedAttack = Math.round(this.hp * bitePercentOfAttackerHp)
     const attackAmount = Math.min(intendedAttack, target.hp)
 
-    target.addToLog(`I was attacked by ${this.name} and lost ${attackAmount} hp`)
+    target.addToLog(` ${this.name}💥 > me, –${attackAmount}❣️`)
     target.loseHp(attackAmount)
 
-    this.addToLog(`I attacked Orb ${target.id}: -${attackAmount}hp`)
+    this.addToLog(`💥 ${target.id}: –${attackAmount}❣️`)
     this.preventAgingThisTurn = true
   }
 
@@ -1483,7 +1498,7 @@ class Orb {
     if (canGiveBirth(this)) {
       this.triggerGlow('glow-green')
       
-      const { childHp, tax, totalCost } = computeBirthCost(this.hp, this.genes)
+      const { childHp, totalCost } = computeBirthCost(this.hp, this.genes)
       
       // Safety check
       if (this.hp - totalCost <= 0) {
@@ -1496,7 +1511,9 @@ class Orb {
 
       this.loseHp(totalCost)
       this.reproductionCooldownRemaining = Math.max(0, Math.round(this.genes.reproduction_cooldown))
-      this.addToLog(`It spawned ${child.name} with ❤️${childHp}hp (tax -${tax}hp)`)
+
+      this.addToLog(`👋${orbIcon} ${child.name} ${childHp}❤️ (${child.x},${child.y})`)
+
       registerBirth()
     } else {
       this.addToLog(`I cannot give birth right now`)
@@ -1508,7 +1525,9 @@ class Orb {
     if (energyHere > 0) {
       consumeCellEnergy(this.y, this.x, 1)
       registerEnergyConsumed(1)
-      this.addToLog(`Consumed energy +${hpGainByEnergyConsumption}hp`)
+
+      this.addToLog(`+${hpGainByEnergyConsumption}❤️`)
+
       this.gainHp(hpGainByEnergyConsumption)
       registerHpGainedFromConsumingEnergy(hpGainByEnergyConsumption)
       this.preventAgingThisTurn = true
@@ -1522,12 +1541,12 @@ class Orb {
 
   gainHp(amount: number) {
     this.hp += amount
-    this.addToLog(`❤️${this.hp}`)
+    this.addToLog(`${this.hp}❤️`)
   }
 
   loseHp(amount: number) {
     this.hp -= amount
-    this.addToLog(`❤️${this.hp}`)
+    this.addToLog(`${this.hp}❤️`)
     if (this.hp <= 0) {
       this.die()
     }
@@ -1548,7 +1567,7 @@ class Orb {
       this.deathReason = deathReasons.NO_HP
     }
 
-    this.addToLog(`☠️ I died at age of ${this.age}`)
+    this.addToLog('☠️')
     registerDeath(this.deathReason ?? deathReasons.NO_HP, this.age)
     lastTurnDeadOrbs.push(this)
 
@@ -1725,7 +1744,13 @@ function updateWorldEnergy(turnNum: number) {
     for (let colIndex = 0; colIndex < worldSize[1]; colIndex++) {
       const energy = base[rowIndex]?.[colIndex] ?? 0
 
-      if (shouldReplenish && energy > 0 && getCellOrbs(colIndex, rowIndex).length === 0) {
+      // energy is proliferated if a cell is empty and its energy is between 0 and a limit
+      if (
+        shouldReplenish &&
+        0 < energy &&
+        energy < energySpreadLimit &&
+        getCellOrbs(colIndex, rowIndex).length === 0
+      ) {
         addCellEnergy(rowIndex, colIndex, 1)
       }
 
@@ -2076,6 +2101,7 @@ function App() {
   const [ showSettings, setShowSettings ] = useState(false)
   const [ draftSettings, setDraftSettings ] = useState<Settings>(settings)
   const [ showShortcuts, setShowShortcuts ] = useState(false)
+  const [ showOrbsList, setShowOrbsList ] = useState(false)
 
   function trackWorldStats() {
     if (deathStatsPerGeneration.length > 0 && currentGeneration > 0) {
@@ -2287,6 +2313,7 @@ function App() {
           e.code === 'KeyM' ||
           e.code === 'KeyN' ||
           e.code === 'KeyS' ||
+          e.code === 'KeyO' ||
           e.code === 'Digit1' ||
           e.code === 'Digit2' ||
           e.code === 'Digit3' ||
@@ -2390,6 +2417,11 @@ function App() {
           setShowSettings(true)
         }
       }
+
+      if (e.code === 'KeyO') {
+        e.preventDefault()
+        setShowOrbsList(prev => !prev)
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -2462,7 +2494,7 @@ function App() {
               resetSimulation()
             }}
           >
-            ↪️Restart
+            ↪️ Restart
           </button>
 
           <div>
@@ -2525,127 +2557,159 @@ function App() {
           >
             ⚙️
           </button>
+
+          <button
+            onClick={() => {
+              setShowOrbsList(true)
+            }}
+            title="Open Orbs List"
+          >
+            Orbs List
+          </button>
         </div>
       </div>
 
       <div className="content">
-        <div
-          className="world"
-          style={{
-            width: `${worldPixelWidth}px`,
-            height: `${worldPixelHeight}px`
-          }}
-        >
-          <div
-            className="grid field"
-            style={{
-              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
-              width: `${worldPixelWidth}px`,
-              height: `${worldPixelHeight}px`
-            }}
-          >
-            {world.map((row: number[], rowIndex: any) => (
-              row.map((_value: number, colIndex: any) => (
-                <div
-                  key={`cell-${rowIndex}-${colIndex}`}
-                  className="cell"
-                />
-              ))
-            ))}
-          </div>
-          <div
-            className="attack-effects-layer"
-            style={{
-              width: `${worldPixelWidth}px`,
-              height: `${worldPixelHeight}px`
-            }}
-          >
-            {attackEffects.map(effect => {
-              const cellStride = cellSize + cellGap
-              const fromLeft = effect.fromX * cellStride + cellSize / 2
-              const fromTop = effect.fromY * cellStride + cellSize / 2
-              const toLeft = effect.toX * cellStride + cellSize / 2
-              const toTop = effect.toY * cellStride + cellSize / 2
-              const dx = toLeft - fromLeft
-              const dy = toTop - fromTop
-              const distance = Math.sqrt(dx * dx + dy * dy)
-              const angle = Math.atan2(dy, dx) * (180 / Math.PI)
-              const color = effect.type === 'attack'
-                ? 'rgba(255, 165, 0, 0.85)'
-                : effect.type === 'spawn'
-                  ? 'rgba(46, 204, 113, 0.85)'
-                  : 'rgba(255, 0, 0, 0.85)'
-              return (
-                <div
-                  key={`attack-effect-${effect.id}`}
-                  className={`attack-effect attack-effect-${effect.type}`}
-                  style={{
-                    left: fromLeft,
-                    top: fromTop,
-                    width: distance,
-                    transform: `rotate(${angle}deg)`,
-                    backgroundColor: color,
-                    ['--effect-color' as any]: color
-                  }}
-                />
-              )
-            })}
-          </div>
-          <div
-            className="orbs-layer"
-            style={{
-              width: `${worldPixelWidth}px`,
-              height: `${worldPixelHeight}px`
-            }}
-          >
-            {orbs.filter(o => o.hp > 0).map((orb) => {
-              const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
-              const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
-              const isSelected = selectedOrb?.id === orb.id
-              const isRelative = !!selectedOrb && selectedOrb.id !== orb.id && selectedOrb.kinshipTo(orb) > 0
-              return (
+        <div className="world-panel">
+          {showOrbsList && (
+            <div className="orbs-list">
+              <div className="orb-story__header">
+                <div>Orbs List ({orbs.filter(o => o.hp > 0).length})</div>
+                <button onClick={() => setShowOrbsList(false)}>⤫</button>
+              </div>
+
+              {orbs.filter(o => o.hp > 0).sort((a, b) => a.name.localeCompare(b.name)).map((orb) => (
                 <div
                   key={orb.id}
-                  id={`orb-${orb.id}`}
-                  className={`orb ${orb.glow} ${isSelected ? 'selected' : ''} ${isRelative ? 'relative' : ''}`}
-                  style={{
-                    backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, ${orb.getColor().blues})`,
-                    transform: `translate(${left}px, ${top}px)`
+                  className="orbs-list-item"
+                  onClick={() => {
+                    setSelectedOrb(orb)
                   }}
-                  onClick={() => showOrbStory(orb)}
                 >
-                  {orb.hp}
-                  <div className="orb-age-badge">{orb.age}</div>
+                  {orb.name}, {orb.hp}❤️, age {orb.age}
                 </div>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+
           <div
-            className="grid energy-layer"
+            className="world"
             style={{
-              gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
-              gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
               width: `${worldPixelWidth}px`,
               height: `${worldPixelHeight}px`
             }}
           >
-            {world.map((row: number[], rowIndex: any) => (
-              row.map((_value: number, colIndex: any) => (
-                <div
-                  key={`cell-${rowIndex}-${colIndex}`}
-                  className="cell"
-                >
-                  {worldEnergy[rowIndex]?.[colIndex] > 0 && (
-                    <div
-                      className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
-                    >
-                      {worldEnergy[rowIndex][colIndex]}
-                    </div>
-                  )}
-                </div>
-              ))
-            ))}
+            <div
+              className="grid field"
+              style={{
+                gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+                gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+                width: `${worldPixelWidth}px`,
+                height: `${worldPixelHeight}px`
+              }}
+            >
+              {world.map((row: number[], rowIndex: any) => (
+                row.map((_value: number, colIndex: any) => (
+                  <div
+                    key={`cell-${rowIndex}-${colIndex}`}
+                    className="cell"
+                  />
+                ))
+              ))}
+            </div>
+            <div
+              className="attack-effects-layer"
+              style={{
+                width: `${worldPixelWidth}px`,
+                height: `${worldPixelHeight}px`
+              }}
+            >
+              {attackEffects.map(effect => {
+                const cellStride = cellSize + cellGap
+                const fromLeft = effect.fromX * cellStride + cellSize / 2
+                const fromTop = effect.fromY * cellStride + cellSize / 2
+                const toLeft = effect.toX * cellStride + cellSize / 2
+                const toTop = effect.toY * cellStride + cellSize / 2
+                const dx = toLeft - fromLeft
+                const dy = toTop - fromTop
+                const distance = Math.sqrt(dx * dx + dy * dy)
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI)
+                const color = effect.type === 'attack'
+                  ? 'rgba(255, 165, 0, 0.85)'
+                  : effect.type === 'spawn'
+                    ? 'rgba(46, 204, 113, 0.85)'
+                    : 'rgba(255, 0, 0, 0.85)'
+                return (
+                  <div
+                    key={`attack-effect-${effect.id}`}
+                    className={`attack-effect attack-effect-${effect.type}`}
+                    style={{
+                      left: fromLeft,
+                      top: fromTop,
+                      width: distance,
+                      transform: `rotate(${angle}deg)`,
+                      backgroundColor: color,
+                      ['--effect-color' as any]: color
+                    }}
+                  />
+                )
+              })}
+            </div>
+            <div
+              className="orbs-layer"
+              style={{
+                width: `${worldPixelWidth}px`,
+                height: `${worldPixelHeight}px`
+              }}
+            >
+              {orbs.filter(o => o.hp > 0).map((orb) => {
+                const left = orb.x * (cellSize + cellGap) + (cellSize - orbSize) / 2
+                const top = orb.y * (cellSize + cellGap) + (cellSize - orbSize) / 2
+                const isSelected = selectedOrb?.id === orb.id
+                const isRelative = !!selectedOrb && selectedOrb.id !== orb.id && selectedOrb.kinshipTo(orb) > 0
+                return (
+                  <div
+                    key={orb.id}
+                    id={`orb-${orb.id}`}
+                    className={`orb ${orb.glow} ${isSelected ? 'selected' : ''} ${isRelative ? 'relative' : ''}`}
+                    style={{
+                      backgroundColor: `rgb(${orb.getColor().reds}, ${orb.getColor().greens}, ${orb.getColor().blues})`,
+                      transform: `translate(${left}px, ${top}px)`
+                    }}
+                    onClick={() => showOrbStory(orb)}
+                  >
+                    {orb.hp}
+                    <div className="orb-age-badge">{orb.age}</div>
+                  </div>
+                )
+              })}
+            </div>
+            <div
+              className="grid energy-layer"
+              style={{
+                gridTemplateRows: `repeat(${worldSize[0]}, 48px)`,
+                gridTemplateColumns: `repeat(${worldSize[1]}, 48px)`,
+                width: `${worldPixelWidth}px`,
+                height: `${worldPixelHeight}px`
+              }}
+            >
+              {world.map((row: number[], rowIndex: any) => (
+                row.map((_value: number, colIndex: any) => (
+                  <div
+                    key={`cell-${rowIndex}-${colIndex}`}
+                    className="cell"
+                  >
+                    {worldEnergy[rowIndex]?.[colIndex] > 0 && (
+                      <div
+                        className={`energy-indicator energy-level-${Math.min(worldEnergy[rowIndex][colIndex], 5)}`}
+                      >
+                        {worldEnergy[rowIndex][colIndex]}
+                      </div>
+                    )}
+                  </div>
+                ))
+              ))}
+            </div>
           </div>
         </div>
 
@@ -2664,26 +2728,28 @@ function App() {
                 {renderGenesTable(selectedOrb.genes)}
               </div>
 
-              <div className="commands-section">
-                <div className="commands-title">
-                  Motivations
+              <div className="commands-section commands-section--column">
+                <div>
+                  <div className="commands-title">
+                    Motivations
+                  </div>
+                  {renderMotivationsTable(selectedOrb.lastMotivations)}
                 </div>
-                {renderMotivationsTable(selectedOrb.lastMotivations)}
-              </div>
 
-              <div className="commands-section">
-                <div className="commands-title">
-                  Surroundings
+                <div>
+                  <div className="commands-title">
+                    Surroundings
+                  </div>
+                  {selectedOrb.lastPerception.length > 0 ? (
+                    renderPerceptionGrid(
+                      selectedOrb.lastPerception,
+                      selectedOrb.lastScanRadius || scanRadius,
+                      selectedOrb.genes.max_energy_norm
+                    )
+                  ) : (
+                    <div className="empty">No snapshot yet</div>
+                  )}
                 </div>
-                {selectedOrb.lastPerception.length > 0 ? (
-                  renderPerceptionGrid(
-                    selectedOrb.lastPerception,
-                    selectedOrb.lastScanRadius || scanRadius,
-                    selectedOrb.genes.max_energy_norm
-                  )
-                ) : (
-                  <div className="empty">No snapshot yet</div>
-                )}
               </div>
 
               <div className="commands-section">
@@ -3010,7 +3076,11 @@ function App() {
       )}
 
       {showShortcuts && (
-        <div className="shortcuts-panel" role="dialog" aria-label="Keyboard shortcuts">
+        <div
+          className="shortcuts-panel"
+          role="dialog"
+          aria-label="Keyboard shortcuts"
+        >
           <div className="shortcuts-panel-header">
             <div>Shortcuts</div>
             <button onClick={() => setShowShortcuts(false)}>⤫</button>
@@ -3042,6 +3112,9 @@ function App() {
 
             <div className="shortcut-key"><kbd>S</kbd></div>
             <div className="shortcut-desc">Settings</div>
+
+            <div className="shortcut-key"><kbd>O</kbd></div>
+            <div className="shortcut-desc">Orbs List</div>
           </div>
         </div>
       )}
