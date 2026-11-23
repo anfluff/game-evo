@@ -1,159 +1,19 @@
 import React from 'react'
-
-// Settings model and helpers (moved from src/settings.ts)
-export type Settings = {
-  worldSize: [number, number]
-  initialOrbHP: [number, number]
-  initialOrbsCount: number
-  newGenStrongestCount: number
-  newGenOffspringPerParent: number
-  birthTaxPercent: number
-  initialEnergyOnMap: number
-  resetEnergyOnNewGenerations: boolean
-  energyReplenishIntervalTurns: number
-  energySpreadThreshold: number
-  energySpreadLimit: number
-  graphicEffects: boolean
-  hpGainByEnergyConsumption: number
-  energyCreatedOnDeath: number
-  bitePercentOfAttackerHp: number
-  biteMineralDropFraction: number
-  biteMineralDropMin: number
-  scanRadius: number
-  idLength: number
-  initialTurnDuration: number
-  kinshipMaxDepth: number
-}
-
-export const defaultSettings: Settings = {
-  worldSize: [15, 25],
-  graphicEffects: true,
-  initialTurnDuration: 200,
-
-  initialEnergyOnMap: 200,
-  resetEnergyOnNewGenerations: true,
-
-  initialOrbHP: [10, 20],
-  initialOrbsCount: 15,
-  newGenStrongestCount: 5,
-  newGenOffspringPerParent: 3,
-
-  energyReplenishIntervalTurns: 50,
-  // energySpreadThreshold: 8,
-  // energySpreadLimit: 10,
-  energySpreadThreshold: 5,
-  energySpreadLimit: 4,
-
-  birthTaxPercent: 20,
-
-  biteMineralDropMin: 1,
-  biteMineralDropFraction: 0.2,
-  bitePercentOfAttackerHp: 0.3,
-
-  hpGainByEnergyConsumption: 3,
-  energyCreatedOnDeath: 2,
-
-  scanRadius: 1,
-
-  idLength: 6,
-  kinshipMaxDepth: 12
-}
-
-const STORAGE_KEY = 'life1_settings'
-
-export function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultSettings
-    const parsed = JSON.parse(raw)
-    const merged = {
-      ...defaultSettings,
-      ...parsed
-    }
-    return sanitizeSettings(merged)
-  } catch {
-    return defaultSettings
-  }
-}
-
-export function saveSettings(next: Settings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeSettings(next)))
-}
-
-export function resetSettings() {
-  localStorage.removeItem(STORAGE_KEY)
-}
-
-function clamp(n: number, min: number, max?: number): number {
-  const base = isFinite(n) ? Math.floor(n) : min
-  const clampedMin = Math.max(min, base)
-  if (typeof max === 'number' && isFinite(max)) {
-    return Math.min(clampedMin, max)
-  }
-  return clampedMin
-}
-
-function clampFloat(n: number, min: number, max?: number): number {
-  const base = isFinite(n) ? n : min
-  const clampedMin = Math.max(min, base)
-  if (typeof max === 'number' && isFinite(max)) {
-    return Math.min(clampedMin, max)
-  }
-  return clampedMin
-}
-
-export function sanitizeSettings(s: Partial<Settings>): Settings {
-  const rows = clamp(s.worldSize?.[0] ?? defaultSettings.worldSize[0], 1)
-  const cols = clamp(s.worldSize?.[1] ?? defaultSettings.worldSize[1], 1)
-  const hpMin = clamp(s.initialOrbHP?.[0] ?? defaultSettings.initialOrbHP[0], 1)
-  const hpMaxRaw = s.initialOrbHP?.[1] ?? defaultSettings.initialOrbHP[1]
-  const hpMax = clamp(hpMaxRaw, hpMin)
-
-  return {
-    worldSize: [rows, cols],
-    initialOrbHP: [hpMin, hpMax],
-    initialOrbsCount: clamp(s.initialOrbsCount ?? defaultSettings.initialOrbsCount, 1),
-    newGenStrongestCount: clamp(s.newGenStrongestCount ?? defaultSettings.newGenStrongestCount, 1),
-    newGenOffspringPerParent: clamp(s.newGenOffspringPerParent ?? defaultSettings.newGenOffspringPerParent, 1),
-    birthTaxPercent: clamp(s.birthTaxPercent ?? defaultSettings.birthTaxPercent, 0, 100),
-    initialEnergyOnMap: clamp(s.initialEnergyOnMap ?? defaultSettings.initialEnergyOnMap, 0),
-    resetEnergyOnNewGenerations: Boolean(s.resetEnergyOnNewGenerations),
-    energyReplenishIntervalTurns: clamp(
-      s.energyReplenishIntervalTurns ?? defaultSettings.energyReplenishIntervalTurns,
-      0
-    ),
-    energySpreadThreshold: clamp(s.energySpreadThreshold ?? defaultSettings.energySpreadThreshold, 0),
-    energySpreadLimit: clamp(s.energySpreadLimit ?? defaultSettings.energySpreadLimit, 0),
-    graphicEffects: typeof s.graphicEffects === 'boolean' ? s.graphicEffects : defaultSettings.graphicEffects,
-    hpGainByEnergyConsumption: clamp(s.hpGainByEnergyConsumption ?? defaultSettings.hpGainByEnergyConsumption, 0),
-    energyCreatedOnDeath: clamp(s.energyCreatedOnDeath ?? defaultSettings.energyCreatedOnDeath, 0),
-    bitePercentOfAttackerHp: clampFloat(
-      s.bitePercentOfAttackerHp ?? defaultSettings.bitePercentOfAttackerHp,
-      0,
-      2
-    ),
-    biteMineralDropFraction: clampFloat(
-      s.biteMineralDropFraction ?? defaultSettings.biteMineralDropFraction,
-      0,
-      1
-    ),
-    biteMineralDropMin: clamp(s.biteMineralDropMin ?? defaultSettings.biteMineralDropMin, 0),
-    scanRadius: clamp(s.scanRadius ?? defaultSettings.scanRadius, 1),
-    idLength: clamp(s.idLength ?? defaultSettings.idLength, 1),
-    initialTurnDuration: clamp(s.initialTurnDuration ?? defaultSettings.initialTurnDuration, 1),
-    kinshipMaxDepth: clamp(s.kinshipMaxDepth ?? defaultSettings.kinshipMaxDepth, 1),
-  }
-}
+import type { Settings } from '../game/settings'
 
 type SettingsPanelProps = {
   draftSettings: Settings
   setDraftSettings: React.Dispatch<React.SetStateAction<Settings>>
+  onSave: () => void
+  onResetDefaults: () => void
   onClose: () => void
 }
 
 export function SettingsPanel({
   draftSettings,
   setDraftSettings,
+  onSave,
+  onResetDefaults,
   onClose,
 }: SettingsPanelProps) {
   return (
@@ -228,19 +88,24 @@ export function SettingsPanel({
                  onChange={(e) => setDraftSettings(s => ({ ...s, resetEnergyOnNewGenerations: e.target.checked }))} />
         </div>
         <div className="settings-row">
-          <label>Energy replenish interval (turns)</label>
-          <input className="settings-input" type="number" min={0} value={draftSettings.energyReplenishIntervalTurns}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, energyReplenishIntervalTurns: Math.max(0, Number(e.target.value)) }))} />
+          <label>Energy rain per turn, per 1000 cells</label>
+          <input className="settings-input" type="number" min={0} step="1" value={draftSettings.energyRainPer1000Cells}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energyRainPer1000Cells: Math.max(0, Number(e.target.value)) }))} />
         </div>
         <div className="settings-row">
-          <label>Energy spread threshold</label>
-          <input className="settings-input" type="number" min={0} value={draftSettings.energySpreadThreshold}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, energySpreadThreshold: Math.max(0, Number(e.target.value)) }))} />
+          <label>Energy cap per cell</label>
+          <input className="settings-input" type="number" min={1} value={draftSettings.energyCellCap}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, energyCellCap: Math.max(1, Number(e.target.value)) }))} />
         </div>
         <div className="settings-row">
-          <label>Energy spread limit</label>
-          <input className="settings-input" type="number" min={0} value={draftSettings.energySpreadLimit}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, energySpreadLimit: Math.max(0, Number(e.target.value)) }))} />
+          <label>Upkeep, % of HP per turn (plus 1)</label>
+          <input className="settings-input" type="number" min={0} step="0.5" value={draftSettings.upkeepPercentOfHp}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, upkeepPercentOfHp: Math.max(0, Number(e.target.value)) }))} />
+        </div>
+        <div className="settings-row">
+          <label>Generation length in turns (0 = until extinction)</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.generationLengthTurns}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, generationLengthTurns: Math.max(0, Number(e.target.value)) }))} />
         </div>
 
         {/* Graphics effects toggle moved to the top actions bar */}
@@ -261,14 +126,14 @@ export function SettingsPanel({
                  onChange={(e) => setDraftSettings(s => ({ ...s, bitePercentOfAttackerHp: Math.max(0, Number(e.target.value)) }))} />
         </div>
         <div className="settings-row">
-          <label>Bite mineral drop fraction</label>
-          <input className="settings-input" type="number" min={0} step="0.01" value={draftSettings.biteMineralDropFraction}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, biteMineralDropFraction: Math.max(0, Number(e.target.value)) }))} />
+          <label>Bite waste fraction</label>
+          <input className="settings-input" type="number" min={0} step="0.01" value={draftSettings.biteWasteFraction}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, biteWasteFraction: Math.max(0, Number(e.target.value)) }))} />
         </div>
         <div className="settings-row">
-          <label>Bite mineral drop min</label>
-          <input className="settings-input" type="number" min={0} value={draftSettings.biteMineralDropMin}
-                 onChange={(e) => setDraftSettings(s => ({ ...s, biteMineralDropMin: Math.max(0, Number(e.target.value)) }))} />
+          <label>Bite waste min (HP)</label>
+          <input className="settings-input" type="number" min={0} value={draftSettings.biteWasteMin}
+                 onChange={(e) => setDraftSettings(s => ({ ...s, biteWasteMin: Math.max(0, Number(e.target.value)) }))} />
         </div>
 
         <div className="settings-row">
@@ -295,21 +160,14 @@ export function SettingsPanel({
 
         <div className="settings-actions">
           <button
-            onClick={() => {
-              const sanitized = sanitizeSettings(draftSettings)
-              saveSettings(sanitized)
-              window.location.reload()
-            }}
+            onClick={onSave}
             title="Save settings and restart the game"
           >
             💾 Save & Restart
           </button>
           <button onClick={onClose} title="Close settings">Cancel</button>
           <button
-            onClick={() => {
-              resetSettings()
-              window.location.reload()
-            }}
+            onClick={onResetDefaults}
             title="Reset to defaults and restart"
           >
             ♻️ Reset Defaults
